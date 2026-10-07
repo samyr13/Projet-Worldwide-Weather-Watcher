@@ -16,54 +16,48 @@
 #include "modes.h" 
 #include "buttons.h"
 
-// Variable globale unique pour le mode courant
+// Déclaration unique de la variable globale du mode
 SystemMode mode_actuel = MODE_STANDARD;
 
 int main(void) {
     // Initialisation des couches HAL STM32
     HAL_Init();
-    
-    // Config de l'horloge système (décommente si nécessaire selon ton setup.h)
-    // SystemClock_Config(); 
 
-    // Initialisation de la console UART (pour les printf via ST-LINK)
-    // setup_uart_console();
-
-    // Initialisation de la LED RGB Grove
-    grove_rgb_init();
+    // Initialisation du driver de la LED RGB (nom avec majuscules)
+    GroveRGB_Init();
 
     printf("\r\n==============================================\r\n");
     printf("   STATION METEO 3W - INITIALISATION SYSTEME  \r\n");
     printf("==============================================\r\n");
 
-    // Test de boot : Bouton Rouge enfoncé au démarrage ?
+    // Test au démarrage : Bouton Rouge enfoncé ?
     check_boot_mode();
 
     // Boucle principale
     while (1) {
-        // 1. Traitement des appuis de 5s sur les boutons (vert / rouge)
+        // 1. Détection des appuis de 5s sur les boutons (vert / rouge)
         process_button_presses();
 
         // 2. Traitement selon le mode courant
         switch (mode_actuel) {
             case MODE_STANDARD:
-                // TODO: Acquisition capteurs nominale (LOG_INTERVAL)
+                // TODO: Acquisition capteurs nominale
                 break;
 
             case MODE_CONFIGURATION:
-                // TODO: Écoute des commandes UART pour modifier l'EEPROM
+                // TODO: Écoute des commandes UART
                 break;
 
             case MODE_ECONOMIQUE:
-                // TODO: Acquisition espacée (LOG_INTERVAL * 2, GPS 1 cycle/2)
+                // TODO: Acquisition espacée
                 break;
 
             case MODE_MAINTENANCE:
-                // TODO: Suspension écriture SD et transfert direct sur UART
+                // TODO: Transfert direct sur UART
                 break;
         }
 
-        // Cadencement de la boucle principale (50 ms)
+        // Période de scrutation (50 ms)
         HAL_Delay(50);
     }
 }

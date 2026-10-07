@@ -1,7 +1,7 @@
 #ifndef MODES_H
 #define MODES_H
 
-// Énumération des 4 modes de la station 3W
+// Énumération des 4 modes de la station météo 3W
 typedef enum {
     MODE_STANDARD,
     MODE_CONFIGURATION,
@@ -9,8 +9,7 @@ typedef enum {
     MODE_MAINTENANCE
 } SystemMode;
 
-// Prototype de fonction pour initialiser ou changer de mode
-void set_system_mode(SystemMode new_mode);
-SystemMode get_current_mode(void);
+// ⚠️ LIGNE À AJOUTER : Rend la variable accessible dans tous les fichiers .c qui incluent modes.h
+extern SystemMode mode_actuel;
 
 #endif // MODES_H
