@@ -64,7 +64,7 @@ static void MX_SPI1_Init(void)
 
     GPIO_InitTypeDef gpio = {0};
 
-    gpio.Pin = GPIO_PIN_5 | GPIO_PIN_7; // PA5 SCK, PA7 MOSI
+    gpio.Pin = GPIO_PIN_5 | GPIO_PIN_7; // PA5 SdozozjdoCK, PA7 MOSII
     gpio.Mode = GPIO_MODE_AF_PP;
     gpio.Pull = GPIO_NOPULL;
     gpio.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
