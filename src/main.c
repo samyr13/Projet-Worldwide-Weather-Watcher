@@ -16,14 +16,17 @@
 #include "modes.h" 
 #include "buttons.h"
 
-// Déclaration unique de la variable globale du mode
+// Déclaration unique de la variable globale pour le mode courant
 SystemMode mode_actuel = MODE_STANDARD;
 
 int main(void) {
-    // Initialisation des couches HAL STM32
+    // 1. Initialisation de la couche HAL STM32
     HAL_Init();
 
-    // Initialisation du driver de la LED RGB (nom avec majuscules)
+    // 2. Initialisation globale (UART/Peripheriques depuis setup.c)
+    Global_Init();
+
+    // 3. Initialisation du driver de la LED RGB Grove
     GroveRGB_Init();
 
     printf("\r\n==============================================\r\n");
@@ -41,23 +44,19 @@ int main(void) {
         // 2. Traitement selon le mode courant
         switch (mode_actuel) {
             case MODE_STANDARD:
-                // TODO: Acquisition capteurs nominale
                 break;
 
             case MODE_CONFIGURATION:
-                // TODO: Écoute des commandes UART
                 break;
 
             case MODE_ECONOMIQUE:
-                // TODO: Acquisition espacée
                 break;
 
             case MODE_MAINTENANCE:
-                // TODO: Transfert direct sur UART
                 break;
         }
 
-        // Période de scrutation (50 ms)
+        // Cadencement de la boucle (50 ms)
         HAL_Delay(50);
     }
 }
