@@ -16,47 +16,35 @@
 #include "modes.h" 
 #include "buttons.h"
 
-// Déclaration unique de la variable globale pour le mode courant
 SystemMode mode_actuel = MODE_STANDARD;
 
 int main(void) {
-    // 1. Initialisation de la couche HAL STM32
     HAL_Init();
-
-    // 2. Initialisation globale (UART/Peripheriques depuis setup.c)
     Global_Init();
 
-    // 3. Initialisation du driver de la LED RGB Grove
+    buttons_init();
     GroveRGB_Init();
 
     printf("\r\n==============================================\r\n");
     printf("   STATION METEO 3W - INITIALISATION SYSTEME  \r\n");
     printf("==============================================\r\n");
 
-    // Test au démarrage : Bouton Rouge enfoncé ?
     check_boot_mode();
 
-    // Boucle principale
     while (1) {
-        // 1. Détection des appuis de 5s sur les boutons (vert / rouge)
         process_button_presses();
 
-        // 2. Traitement selon le mode courant
         switch (mode_actuel) {
             case MODE_STANDARD:
                 break;
-
             case MODE_CONFIGURATION:
                 break;
-
             case MODE_ECONOMIQUE:
                 break;
-
             case MODE_MAINTENANCE:
                 break;
         }
 
-        // Cadencement de la boucle (50 ms)
         HAL_Delay(50);
     }
 }
