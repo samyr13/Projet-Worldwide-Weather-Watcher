@@ -5,19 +5,19 @@
 
 /*
  * Grove Chainable RGB LED :
- * - Port Grove D6 du shield
- * - Signal1=D6=PB10 → CIN (horloge P9813)
- * - Signal2=D7=PA8  → DIN (données P9813)
+ * - Port Grove D2 du shield
+ * - PA10 → CIN (horloge P9813)
+ * - PB3  → DIN (données P9813)
  */
-#define RGB_DATA_PORT   GPIOA
-#define RGB_DATA_PIN    GPIO_PIN_8
+#define RGB_DATA_PORT   GPIOB
+#define RGB_DATA_PIN    GPIO_PIN_3
 
-#define RGB_CLK_PORT    GPIOB
+#define RGB_CLK_PORT    GPIOA
 #define RGB_CLK_PIN     GPIO_PIN_10
 
 /*
  * Grove Light Sensor v1.3
- * Port Grove A1 du shield (PA4 = ADC1_IN9).
+ * Port Grove A2 du shield (PA4 = ADC1_IN9).
  */
 #define LIGHT_ADC_CHANNEL  ADC_CHANNEL_9
 #define LIGHT_GPIO_PORT    GPIOA
@@ -25,14 +25,15 @@
 
 /*
  * Grove Dual Button v1.0
- * À brancher sur un port digital Grove, par exemple D2.
- * À adapter selon le port choisi et le mapping réel.
+ * Port Grove A0 du shield :
+ * - PA0 : bouton rouge
+ * - PA1 : bouton vert
  */
 #define BUTTON1_PORT GPIOA
-#define BUTTON1_PIN  GPIO_PIN_10
+#define BUTTON1_PIN  GPIO_PIN_0
 
-#define BUTTON2_PORT GPIOB
-#define BUTTON2_PIN  GPIO_PIN_3
+#define BUTTON2_PORT GPIOA
+#define BUTTON2_PIN  GPIO_PIN_1
 
 /*
  * Grove GPS Air530Z
