@@ -12,7 +12,11 @@
 #include "grove_bme680.h"
 #include "sd_logger.h"
 
+<<<<<<< HEAD
 // Modules de gestion du système 
+=======
+// Modules de gestion du système 3W
+>>>>>>> e4cee954d92b438cb1ed9dcf20554ad72e795231
 #include "modes.h" 
 #include "buttons.h"
 
