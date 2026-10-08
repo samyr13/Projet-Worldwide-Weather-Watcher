@@ -27,7 +27,7 @@ int main(void) {
     GroveRGB_Init();
 
     printf("\r\n==============================================\r\n");
-    printf("   STATION METEO 3W - INITIALISATION SYSTEME  \r\n");
+    printf("   STATION METEO  - INITIALISATION SYSTEME  \r\n");
     printf("==============================================\r\n");
 
     check_boot_mode();
