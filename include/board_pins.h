@@ -17,7 +17,7 @@
 
 /*
  * Grove Light Sensor v1.3
- * Port Grove A2 du shield (PA4 = ADC1_IN9).
+ * Port Grove A1 du shield (PA4 = ADC1_IN9).
  */
 #define LIGHT_ADC_CHANNEL  ADC_CHANNEL_9
 #define LIGHT_GPIO_PORT    GPIOA

@@ -16,6 +16,7 @@
 #include "modes.h" 
 #include "buttons.h"
 #include "rtc_status.h"
+#include "light_status.h"
 
 SystemMode mode_actuel = MODE_STANDARD;
 
@@ -34,9 +35,13 @@ int main(void) {
     RTCStatus rtc_status;
     RTCStatus_Init(&rtc_status);
 
+    LightStatus light_status;
+    LightStatus_Init(&light_status);
+
     while (1) {
         process_button_presses();
         RTCStatus_Update(&rtc_status, mode_actuel);
+        LightStatus_Update(&light_status, mode_actuel);
 
         switch (mode_actuel) {
             case MODE_STANDARD:
