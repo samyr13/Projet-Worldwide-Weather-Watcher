@@ -6,6 +6,7 @@
 
 // Durée de maintien requise (5 secondes = 5000 ms)
 #define LONG_PRESS_TIME_MS 5000
+#define CONFIGURATION_TIMEOUT_MS (30UL * 60UL * 1000UL)
 
 // Initialisation des broches GPIO pour le Port A0 Grove (PA0 et PA1)
 void buttons_init(void);

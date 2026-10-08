@@ -12,11 +12,10 @@
 #include "grove_bme680.h"
 #include "sd_logger.h"
 
-
 // Modules de gestion du système 
 #include "modes.h" 
 #include "buttons.h"
-
+#include "rtc_status.h"
 
 SystemMode mode_actuel = MODE_STANDARD;
 
@@ -24,7 +23,6 @@ int main(void) {
     HAL_Init();
     Global_Init();
 
-    buttons_init();
     GroveRGB_Init();
 
     printf("\r\n==============================================\r\n");
@@ -33,8 +31,12 @@ int main(void) {
 
     check_boot_mode();
 
+    RTCStatus rtc_status;
+    RTCStatus_Init(&rtc_status);
+
     while (1) {
         process_button_presses();
+        RTCStatus_Update(&rtc_status, mode_actuel);
 
         switch (mode_actuel) {
             case MODE_STANDARD:
@@ -50,4 +52,3 @@ int main(void) {
         HAL_Delay(50);
     }
 }
-

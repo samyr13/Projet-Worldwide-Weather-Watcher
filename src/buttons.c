@@ -25,6 +25,7 @@ static uint32_t red_start_time = 0;
 static uint32_t green_start_time = 0;
 
 static SystemMode previous_mode = MODE_STANDARD;
+static uint32_t configuration_last_activity = 0;
 
 /**
  * @brief Initialisation GPIO avec PULLUP (1 au repos, 0 lors de l'appui)
@@ -50,6 +51,7 @@ void check_boot_mode(void) {
 
     if (HAL_GPIO_ReadPin(BTN_RED_PORT, BTN_RED_PIN) == BTN_ACTIVE_LEVEL) {
         mode_actuel = MODE_CONFIGURATION;
+        configuration_last_activity = HAL_GetTick();
         printf("[BOOT] Bouton Rouge enfonce au Reset -> MODE CONFIGURATION\r\n");
     } else {
         mode_actuel = MODE_STANDARD;
@@ -64,6 +66,13 @@ void check_boot_mode(void) {
 void process_button_presses(void) {
     uint32_t now = HAL_GetTick();
 
+    if (mode_actuel == MODE_CONFIGURATION &&
+        (now - configuration_last_activity) >= CONFIGURATION_TIMEOUT_MS) {
+        mode_actuel = MODE_STANDARD;
+        update_led_color(mode_actuel);
+        printf("[TIMEOUT] 30 minutes sans activite -> MODE STANDARD\r\n");
+    }
+
     // ==========================================
     // 1. BOUTON VERT (PA1) -> Mode Économique
     // ==========================================
@@ -74,20 +83,22 @@ void process_button_presses(void) {
             case BTN_STATE_RELEASED:
                 green_state = BTN_STATE_PRESSED;
                 green_start_time = now;
+                if (mode_actuel == MODE_CONFIGURATION) {
+                    configuration_last_activity = now;
+                }
                 printf("[BOUTON] Vert appuye... Maintenez 5s\r\n");
                 break;
 
             case BTN_STATE_PRESSED:
                 if ((now - green_start_time) >= LONG_PRESS_TIME_MS) {
-                    if (mode_actuel == MODE_ECONOMIQUE) {
-                        mode_actuel = MODE_STANDARD;
-                        printf("[ACTION] Appui 5s Vert -> Retour au MODE STANDARD\r\n");
-                    } else {
-                        previous_mode = mode_actuel;
+                    if (mode_actuel == MODE_STANDARD) {
+                        previous_mode = MODE_STANDARD;
                         mode_actuel = MODE_ECONOMIQUE;
                         printf("[ACTION] Appui 5s Vert -> Passage en MODE ECONOMIQUE\r\n");
+                        update_led_color(mode_actuel);
+                    } else {
+                        printf("[ACTION] Appui 5s Vert ignore : MODE ECONOMIQUE accessible depuis STANDARD uniquement\r\n");
                     }
-                    update_led_color(mode_actuel);
                     green_state = BTN_STATE_HANDLED;
                 }
                 break;
@@ -112,6 +123,9 @@ void process_button_presses(void) {
             case BTN_STATE_RELEASED:
                 red_state = BTN_STATE_PRESSED;
                 red_start_time = now;
+                if (mode_actuel == MODE_CONFIGURATION) {
+                    configuration_last_activity = now;
+                }
                 printf("[BOUTON] Rouge appuye... Maintenez 5s\r\n");
                 break;
 
@@ -120,15 +134,15 @@ void process_button_presses(void) {
                     if (mode_actuel == MODE_MAINTENANCE) {
                         mode_actuel = previous_mode;
                         printf("[ACTION] Appui 5s Rouge -> Sortie de Maintenance\r\n");
-                    } else if (mode_actuel == MODE_ECONOMIQUE || mode_actuel == MODE_CONFIGURATION) {
-                        mode_actuel = MODE_STANDARD;
-                        printf("[ACTION] Appui 5s Rouge -> Retour au MODE STANDARD\r\n");
-                    } else {
+                        update_led_color(mode_actuel);
+                    } else if (mode_actuel == MODE_STANDARD || mode_actuel == MODE_ECONOMIQUE) {
                         previous_mode = mode_actuel;
                         mode_actuel = MODE_MAINTENANCE;
                         printf("[ACTION] Appui 5s Rouge -> Passage en MODE MAINTENANCE\r\n");
+                        update_led_color(mode_actuel);
+                    } else {
+                        printf("[ACTION] Appui 5s Rouge ignore dans MODE CONFIGURATION\r\n");
                     }
-                    update_led_color(mode_actuel);
                     red_state = BTN_STATE_HANDLED;
                 }
                 break;
