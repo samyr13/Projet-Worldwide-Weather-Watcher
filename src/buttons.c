@@ -9,13 +9,13 @@
 #define BTN_GREEN_PIN      GPIO_PIN_1
 #define BTN_GREEN_PORT     GPIOA
 
-// ⚠️ NIVEAU ACTIF INVERSÉ : 1 au repos, 0 lors de l'appui (Active LOW)
+// ⚠️ Active LOW (1 au repos, 0 appuyé)
 #define BTN_ACTIVE_LEVEL   GPIO_PIN_RESET 
 
 typedef enum {
-    BTN_STATE_RELEASED,
-    BTN_STATE_PRESSED,
-    BTN_STATE_HANDLED
+    BTN_STATE_RELEASED,  // Relâché
+    BTN_STATE_PRESSED,   // Appui en cours
+    BTN_STATE_HANDLED    // Action exécutée (verrouillé jusqu'au relâchement)
 } ButtonState;
 
 static ButtonState red_state = BTN_STATE_RELEASED;
@@ -27,7 +27,7 @@ static uint32_t green_start_time = 0;
 static SystemMode previous_mode = MODE_STANDARD;
 
 /**
- * @brief Initialisation GPIO avec PULLUP pour la logique Active LOW
+ * @brief Initialisation GPIO avec PULLUP (1 au repos, 0 lors de l'appui)
  */
 void buttons_init(void) {
     __HAL_RCC_GPIOA_CLK_ENABLE();
@@ -35,21 +35,22 @@ void buttons_init(void) {
     GPIO_InitTypeDef GPIO_InitStruct = {0};
     GPIO_InitStruct.Pin = BTN_RED_PIN | BTN_GREEN_PIN;
     GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-    GPIO_InitStruct.Pull = GPIO_PULLUP; // Fixe à 3.3V au repos
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-    uint8_t red_raw = HAL_GPIO_ReadPin(BTN_RED_PORT, BTN_RED_PIN);
-    uint8_t green_raw = HAL_GPIO_ReadPin(BTN_GREEN_PORT, BTN_GREEN_PIN);
-    printf("[DIAG] Etat au repos -> PA0 (Rouge): %d | PA1 (Vert): %d (Attendu: 1 au repos)\r\n", red_raw, green_raw);
 }
 
+/**
+ * @brief Test du bouton rouge au démarrage (Mode Configuration)
+ */
 void check_boot_mode(void) {
     buttons_init();
 
+    HAL_Delay(10);
+
     if (HAL_GPIO_ReadPin(BTN_RED_PORT, BTN_RED_PIN) == BTN_ACTIVE_LEVEL) {
         mode_actuel = MODE_CONFIGURATION;
-        printf("[BOOT] Bouton Rouge enfonce -> Entree en MODE CONFIGURATION\r\n");
+        printf("[BOOT] Bouton Rouge enfonce au Reset -> MODE CONFIGURATION\r\n");
     } else {
         mode_actuel = MODE_STANDARD;
         printf("[BOOT] Demarrage nominal -> MODE STANDARD\r\n");
@@ -57,10 +58,15 @@ void check_boot_mode(void) {
     update_led_color(mode_actuel);
 }
 
+/**
+ * @brief Gestion des appuis de 5s pour basculer les modes
+ */
 void process_button_presses(void) {
     uint32_t now = HAL_GetTick();
 
+    // ==========================================
     // 1. BOUTON VERT (PA1) -> Mode Économique
+    // ==========================================
     uint8_t green_pressed = (HAL_GPIO_ReadPin(BTN_GREEN_PORT, BTN_GREEN_PIN) == BTN_ACTIVE_LEVEL);
 
     if (green_pressed) {
@@ -68,14 +74,14 @@ void process_button_presses(void) {
             case BTN_STATE_RELEASED:
                 green_state = BTN_STATE_PRESSED;
                 green_start_time = now;
-                printf("[BOUTON] Vert appuye... Maintenez 5 secondes\r\n");
+                printf("[BOUTON] Vert appuye... Maintenez 5s\r\n");
                 break;
 
             case BTN_STATE_PRESSED:
                 if ((now - green_start_time) >= LONG_PRESS_TIME_MS) {
                     if (mode_actuel == MODE_ECONOMIQUE) {
-                        mode_actuel = previous_mode;
-                        printf("[ACTION] Appui 5s Vert -> Retour mode precedent\r\n");
+                        mode_actuel = MODE_STANDARD;
+                        printf("[ACTION] Appui 5s Vert -> Retour au MODE STANDARD\r\n");
                     } else {
                         previous_mode = mode_actuel;
                         mode_actuel = MODE_ECONOMIQUE;
@@ -96,7 +102,9 @@ void process_button_presses(void) {
         green_state = BTN_STATE_RELEASED;
     }
 
+    // ==========================================
     // 2. BOUTON ROUGE (PA0) -> Mode Maintenance
+    // ==========================================
     uint8_t red_pressed = (HAL_GPIO_ReadPin(BTN_RED_PORT, BTN_RED_PIN) == BTN_ACTIVE_LEVEL);
 
     if (red_pressed) {
@@ -104,14 +112,17 @@ void process_button_presses(void) {
             case BTN_STATE_RELEASED:
                 red_state = BTN_STATE_PRESSED;
                 red_start_time = now;
-                printf("[BOUTON] Rouge appuye... Maintenez 5 secondes\r\n");
+                printf("[BOUTON] Rouge appuye... Maintenez 5s\r\n");
                 break;
 
             case BTN_STATE_PRESSED:
                 if ((now - red_start_time) >= LONG_PRESS_TIME_MS) {
                     if (mode_actuel == MODE_MAINTENANCE) {
                         mode_actuel = previous_mode;
-                        printf("[ACTION] Appui 5s Rouge -> Sortie de MAINTENANCE\r\n");
+                        printf("[ACTION] Appui 5s Rouge -> Sortie de Maintenance\r\n");
+                    } else if (mode_actuel == MODE_ECONOMIQUE || mode_actuel == MODE_CONFIGURATION) {
+                        mode_actuel = MODE_STANDARD;
+                        printf("[ACTION] Appui 5s Rouge -> Retour au MODE STANDARD\r\n");
                     } else {
                         previous_mode = mode_actuel;
                         mode_actuel = MODE_MAINTENANCE;
@@ -133,22 +144,25 @@ void process_button_presses(void) {
     }
 }
 
+/**
+ * @brief Commande de la LED RGB selon le mode
+ */
 void update_led_color(SystemMode mode) {
     switch (mode) {
         case MODE_STANDARD:
-            GroveRGB_SetColor(0, 255, 0);   // VERTE
+            GroveRGB_SetColor(0, 255, 0);   // Vert
             printf("[LED] Vert (0, 255, 0) - Mode Standard\r\n");
             break;
         case MODE_CONFIGURATION:
-            GroveRGB_SetColor(255, 255, 0); // JAUNE
+            GroveRGB_SetColor(255, 255, 0); // Jaune
             printf("[LED] Jaune (255, 255, 0) - Mode Configuration\r\n");
             break;
         case MODE_ECONOMIQUE:
-            GroveRGB_SetColor(0, 0, 255);   // BLEUE
+            GroveRGB_SetColor(0, 0, 255);   // Bleu
             printf("[LED] Bleu (0, 0, 255) - Mode Économique\r\n");
             break;
         case MODE_MAINTENANCE:
-            GroveRGB_SetColor(255, 165, 0); // ORANGE
+            GroveRGB_SetColor(255, 165, 0); // Orange
             printf("[LED] Orange (255, 165, 0) - Mode Maintenance\r\n");
             break;
     }
