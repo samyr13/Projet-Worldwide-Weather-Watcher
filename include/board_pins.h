@@ -19,27 +19,33 @@
  * Grove Light Sensor v1.3
  * Port Grove A2 du shield (PA4 = ADC1_IN9).
  */
+#ifndef LIGHT_ADC_CHANNEL
 #define LIGHT_ADC_CHANNEL  ADC_CHANNEL_9
 #define LIGHT_GPIO_PORT    GPIOA
 #define LIGHT_GPIO_PIN     GPIO_PIN_4
+#endif
 
 /*
  * Grove Dual Button v1.0
- * Port Grove A0 du shield :
- * - PA0 : bouton rouge
- * - PA1 : bouton vert
+ * Port Grove D7 du shield (actifs à l'état bas, pull-up interne) :
+ * - PA8 (D7) : bouton rouge
+ * - PA9 (D8) : bouton vert
  */
-#define BUTTON1_PORT GPIOA
-#define BUTTON1_PIN  GPIO_PIN_0
+#define BTN_RED_PORT   GPIOA
+#define BTN_RED_PIN    GPIO_PIN_8
 
-#define BUTTON2_PORT GPIOA
-#define BUTTON2_PIN  GPIO_PIN_1
+#define BTN_GREEN_PORT GPIOA
+#define BTN_GREEN_PIN  GPIO_PIN_9
 
 /*
  * Grove GPS Air530Z
- * Port Grove A0 du shield (PA0=UART4_TX, PA1=UART4_RX, AF8).
- * Seul UART libre sur un connecteur Grove unique (USART2=debug, USART1 split sur D2+D8).
+ * Port Grove A0 du shield, UART4 à 9600 bauds (AF8) avec inversion TX/RX :
+ * - PA0 (fil jaune) : réception, reliée au TX du GPS
+ * - PA1 (fil blanc) : émission, reliée au RX du GPS
  */
+#define GPS_UART_INSTANCE UART4
+#define GPS_GPIO_PORT     GPIOA
+#define GPS_GPIO_PINS     (GPIO_PIN_0 | GPIO_PIN_1)
 
 /*
  * Grove RTC v1.2 DS1307 + BME680

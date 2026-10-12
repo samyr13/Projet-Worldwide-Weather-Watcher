@@ -8,7 +8,7 @@
 #define LONG_PRESS_TIME_MS 5000
 #define CONFIGURATION_TIMEOUT_MS (30UL * 60UL * 1000UL)
 
-// Initialisation des broches GPIO pour le Port A0 Grove (PA0 et PA1)
+// Initialisation des broches GPIO pour le Port D7 Grove (PA8 et PA9)
 void buttons_init(void);
 
 // Test du bouton rouge au démarrage (Mode Configuration)
@@ -17,7 +17,10 @@ void check_boot_mode(void);
 // Gestion des transitions de modes (appuis 5s)
 void process_button_presses(void);
 
-// Mise à jour de la couleur de la LED RGB
-void update_led_color(SystemMode mode);
+// Activité en mode configuration (commande reçue) : relance le délai de 30 min
+void buttons_config_activity(void);
+
+// Annonce du mode actif sur le moniteur série (la LED est gérée par system_status)
+void print_mode(SystemMode mode);
 
 #endif // BUTTONS_H

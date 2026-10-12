@@ -30,7 +30,7 @@ microcontrôleur ARM Cortex-M4, et sur les composants suivants :
 | Horloge RTC DS1307 | I2C | Date et heure des mesures |
 | LED RGB Grove | 2 fils | Indication de l'état du système |
 | Deux boutons poussoirs | Numérique | Interaction avec l'utilisateur |
-| Capteur BME680 | I2C | Pression, température et hygrométrie |
+| Capteur BME280 (driver compatible BME680) | I2C | Pression, température et hygrométrie |
 | GPS Air530Z | UART | Position et données GPS |
 | Capteur de luminosité Grove | Analogique | Mesure de la luminosité |
 
@@ -47,13 +47,14 @@ Le câblage détaillé est défini dans
 [`include/board_pins.h`](include/board_pins.h). Les interfaces principales
 sont les suivantes :
 
-- **I2C1** : PB8 (SCL) et PB9 (SDA) pour la RTC et le BME680 ;
+- **I2C1** : PB8 (SCL) et PB9 (SDA) pour la RTC (0x68) et le BME280 (0x76) ;
 - **SPI1** : PA5 (SCK), PA6 (MISO) et PA7 (MOSI) pour le lecteur SD ;
-- **UART4** : PA0 (TX) et PA1 (RX) pour le GPS ;
 - **USART2** : PA2 (TX) et PA3 (RX) pour le moniteur série ;
-- **luminosité** : PA4, entrée ADC ;
-- **carte SD** : CS sur PB5 ;
-- **LED RGB** : données sur PA8 et horloge sur PB10.
+- **boutons** : PA8 (rouge) et PA9 (vert), port Grove D7 ;
+- **luminosité** : PA4, entrée ADC, port Grove A2 ;
+- **carte SD** : CS sur PB5 (D4) ;
+- **LED RGB** : données sur PB3 et horloge sur PA10, port Grove D2 ;
+- **GPS** : UART4 sur PA0 (RX) et PA1 (TX), port Grove A0, 9600 bauds.
 
 > Le shield SD doit être relié aux broches SPI de la carte Nucleo à l'aide de
 > fils Dupont. Vérifier le câblage et l'alimentation avant toute mise sous

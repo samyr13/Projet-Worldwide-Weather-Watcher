@@ -3,6 +3,8 @@
 
 ADC_HandleTypeDef hadc1;
 
+#define LIGHT_FLOATING_DELTA 400 // Entrée en l'air mesurée : écart ~1270 ; capteur branché : écart quasi nul
+
 void GroveLight_Init(void)
 {
     __HAL_RCC_GPIOA_CLK_ENABLE();
@@ -41,6 +43,39 @@ void GroveLight_Init(void)
     sConfig.Offset = 0;
 
     HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+}
+
+/*
+ * Lecture après avoir chargé l'entrée avec la résistance interne (pull-up ou pull-down).
+ * Capteur branché : sa sortie (ampli LM358) impose la tension, la précharge n'a pas d'effet.
+ * Entrée en l'air : la tension préchargée reste, la lecture suit la résistance choisie.
+ */
+static uint16_t read_with_precharge(uint32_t pull)
+{
+    GPIO_InitTypeDef gpio = {0};
+    gpio.Pin = LIGHT_GPIO_PIN;
+    gpio.Mode = GPIO_MODE_INPUT;
+    gpio.Pull = pull;
+    HAL_GPIO_Init(LIGHT_GPIO_PORT, &gpio);
+    HAL_Delay(1);
+
+    gpio.Mode = GPIO_MODE_ANALOG_ADC_CONTROL;
+    gpio.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(LIGHT_GPIO_PORT, &gpio);
+
+    return GroveLight_ReadRaw();
+}
+
+bool GroveLight_IsConnected(void)
+{
+    uint16_t low = read_with_precharge(GPIO_PULLDOWN);
+    uint16_t high = read_with_precharge(GPIO_PULLUP);
+
+    if (low == 0xFFFF || high == 0xFFFF)
+        return false;
+
+    // Écart important entre les deux précharges : entrée en l'air
+    return (int)high - (int)low < LIGHT_FLOATING_DELTA;
 }
 
 uint16_t GroveLight_ReadRaw(void)

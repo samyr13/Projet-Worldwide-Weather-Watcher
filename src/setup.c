@@ -5,13 +5,22 @@
 I2C_HandleTypeDef hi2c1;
 SPI_HandleTypeDef hspi1;
 UART_HandleTypeDef huart2;
-UART_HandleTypeDef huart4;
 
 /**
   * @brief Fonction de transmission du moniteur série (implicitement appelée lors d'un printf)
   */
+#ifdef SERIAL_TRACE
+// Tests uniquement : copie de la sortie série en RAM, relue par le débogueur
+char serial_trace[8192];
+volatile uint16_t serial_trace_len = 0;
+#endif
+
 int _write(int file, char *ptr, int len)
 {
+#ifdef SERIAL_TRACE
+    for (int i = 0; i < len && serial_trace_len < sizeof(serial_trace) - 1; i++)
+        serial_trace[serial_trace_len++] = ptr[i];
+#endif
     HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, HAL_MAX_DELAY);
     return len;
 }
@@ -64,7 +73,7 @@ static void MX_SPI1_Init(void)
 
     GPIO_InitTypeDef gpio = {0};
 
-    gpio.Pin = GPIO_PIN_5 | GPIO_PIN_7; // PA5 SdozozjdoCK, PA7 MOSvvvII
+    gpio.Pin = GPIO_PIN_5 | GPIO_PIN_7; // PA5 SCK, PA7 MOSI
     gpio.Mode = GPIO_MODE_AF_PP;
     gpio.Pull = GPIO_NOPULL;
     gpio.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
@@ -151,19 +160,26 @@ void HAL_UART_MspInit(UART_HandleTypeDef *uartHandle)
         GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
         GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
         HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+        /* Réception des commandes du mode configuration par interruption */
+        HAL_NVIC_SetPriority(USART2_IRQn, 2, 0);
+        HAL_NVIC_EnableIRQ(USART2_IRQn);
     }
-    else if (uartHandle->Instance == UART4)
+    else if (uartHandle->Instance == GPS_UART_INSTANCE)
     {
-        /* GPS Air530Z : PA0=UART4_TX, PA1=UART4_RX — Port Grove A0 */
+        /* GPS Air530Z : UART4 sur PA0/PA1 — Port Grove A0 (TX/RX inversés dans grove_gps_air530z.c) */
         __HAL_RCC_UART4_CLK_ENABLE();
         __HAL_RCC_GPIOA_CLK_ENABLE();
 
-        GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_1;
+        GPIO_InitStruct.Pin = GPS_GPIO_PINS;
         GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
         GPIO_InitStruct.Pull = GPIO_PULLUP;
-        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
         GPIO_InitStruct.Alternate = GPIO_AF8_UART4;
-        HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+        HAL_GPIO_Init(GPS_GPIO_PORT, &GPIO_InitStruct);
+
+        HAL_NVIC_SetPriority(UART4_IRQn, 1, 0);
+        HAL_NVIC_EnableIRQ(UART4_IRQn);
     }
 }
 static void MX_USART2_UART_Init(void)
