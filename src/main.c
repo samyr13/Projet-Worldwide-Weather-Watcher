@@ -20,7 +20,7 @@
 #include "console.h"
 
 // Mode maintenance : données consultables "en direct" sur le port série
-#define MAINTENANCE_PERIOD_MS 5000
+#define MAINTENANCE_PERIOD_MS 10000
 
 extern I2C_HandleTypeDef hi2c1;
 

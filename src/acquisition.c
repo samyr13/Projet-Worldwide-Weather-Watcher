@@ -10,8 +10,6 @@
 
 #define RETRY_PERIOD_MS    200  // Délai entre 2 tentatives sur un capteur qui ne répond pas
 #define TIMEOUTS_FOR_ERROR 2    // Mesures consécutives en timeout avant erreur
-#define ERROR_RECHECK_MS   1500 // Attente d'un capteur déjà en erreur (le GPS émet 1 trame/s)
-#define FAST_SENSOR_WAIT_MS 3000 // GPS (1 trame/s) et luminosité : 3 s sans réponse = capteur absent
 
 static bool running = false;
 static uint32_t start_tick;
@@ -97,23 +95,6 @@ static bool read_gps(void)
     return true;
 }
 
-// Attente maximale d'un capteur : TIMEOUT, ou vérification courte s'il est déjà
-// signalé en erreur (évite de retarder chaque mesure de TIMEOUT secondes)
-static uint32_t wait_limit_ms(uint8_t timeouts)
-{
-    if (timeouts >= TIMEOUTS_FOR_ERROR)
-        return ERROR_RECHECK_MS;
-    return (uint32_t)g_config.timeout_s * 1000UL;
-}
-
-// Capteur à réponse rapide (GPS : 1 trame/s, luminosité : lecture analogique
-// immédiate) : inutile d'attendre tout le TIMEOUT pour savoir qu'il ne répond pas
-static uint32_t fast_wait_limit_ms(uint8_t timeouts)
-{
-    uint32_t limit = wait_limit_ms(timeouts);
-    return (limit < FAST_SENSOR_WAIT_MS) ? limit : FAST_SENSOR_WAIT_MS;
-}
-
 // Compte les mesures consécutives en timeout d'un capteur
 static void update_timeouts(uint8_t *count, bool enabled, bool done)
 {
@@ -171,11 +152,9 @@ bool Acquisition_Poll(Measurement *m)
     // Le GPS envoie une trame par seconde : vérifié à chaque passage
     if (!gps_done) gps_done = read_gps();
 
-    // On attend chaque capteur qui n'a pas encore répondu, dans sa limite de temps
-    uint32_t elapsed = now - start_tick;
-    if ((!env_done && elapsed < wait_limit_ms(env_timeouts)) ||
-        (!light_done && elapsed < fast_wait_limit_ms(light_timeouts)) ||
-        (!gps_done && elapsed < fast_wait_limit_ms(gps_timeouts)))
+    // Cahier des charges : un capteur est attendu jusqu'à TIMEOUT, puis sa donnée vaut "NA"
+    bool timed_out = (now - start_tick) >= (uint32_t)g_config.timeout_s * 1000UL;
+    if (!(env_done && light_done && gps_done) && !timed_out)
         return false;
 
     // Fin de l'acquisition : les capteurs n'ayant pas répondu restent à "NA"

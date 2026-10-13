@@ -110,9 +110,10 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 | `CLOCK=` | règle l'heure | `CLOCK=14:30:00` |
 | `DATE=` | règle la date (mois, jour, année) | `DATE=10,12,2026` |
 | `DAY=` | règle le jour de la semaine | `DAY=MON` |
-| `CONFIG` | affiche tous les réglages *(en plus du PDF)* | |
-| `HELP` | affiche l'aide *(en plus du PDF)* | |
-| `EXIT` | revient au mode standard *(en plus du PDF)* | |
+| `CONFIG` | affiche tous les réglages *(en plus du PDF, affichage seulement)* | |
+| `HELP` | affiche l'aide *(en plus du PDF, affichage seulement)* | |
+
+**Pour quitter le mode configuration** (comme le PDF) : attendre **30 min sans activité**, ou redémarrer la carte sans appuyer sur le bouton rouge.
 
 <details>
 <summary><b>📋 Tous les réglages possibles (cliquer pour afficher)</b></summary>
@@ -141,7 +142,7 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 
 ## 🔧 6. Mode maintenance *(LED orange)*
 
-- ✅ Les mesures s'affichent **en direct** sur le moniteur série (toutes les 5 s)
+- ✅ Les mesures s'affichent **en direct** sur le moniteur série (toutes les 10 s)
 - ✅ Plus rien n'est écrit sur la carte SD
 - ❌ Pouvoir retirer la carte SD sans risque (à faire avec la carte SD)
 
@@ -174,19 +175,21 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 
 ## 🧪 À tester par vous
 
-1. **Mode configuration** : démarrer avec le rouge appuyé, taper `VERSION`, puis `LOG_INTERVAL=1`, puis `EXIT` → une mesure par minute.
+1. **Mode configuration** : démarrer avec le rouge appuyé, taper `VERSION`, puis `LOG_INTERVAL=1`, puis redémarrer la carte normalement → une mesure par minute.
 2. **Mode économique** : vert 5 s → la position GPS ne s'affiche qu'une mesure sur deux.
 3. **Panne de l'horloge** : débrancher la RTC → LED rouge / bleu.
-4. **Panne du capteur** : débrancher le BME280 → « indisponible », puis LED rouge / vert.
+4. **Panne d'un capteur** : débrancher le BME280, la lumière ou le GPS → « indisponible », puis LED d'erreur.
 5. **GPS** : le poser près d'une fenêtre → la position s'affiche après quelques minutes.
+
+> 💡 **Tester les pannes rapidement :** un capteur débranché est attendu **TIMEOUT** secondes (30 s par défaut) à chaque mesure, et l'erreur s'affiche après **2 mesures**, soit environ 1 min en maintenance. Pour une démonstration plus rapide, taper `TIMEOUT=5` en mode configuration : l'erreur s'affiche alors en environ 15 s. Remettre `TIMEOUT=30` (ou `RESET`) après.
 
 ---
 
 ## 📝 Choix à expliquer dans le rapport
 
 - **Boutons en mode économique** : le rouge mène en maintenance, le vert ramène en standard (voir section 2).
-- **Attente des capteurs** : le GPS et la luminosité répondent tout de suite, donc on ne les attend que 3 s au lieu des 30 s du TIMEOUT. Sinon, chaque mesure serait bloquée 30 s quand un capteur est débranché.
 - **Luminosité débranchée** : on charge l'entrée vers 0 V puis vers 3,3 V. Si les deux lectures sont très différentes, c'est que rien n'est branché.
 - **Mémoire des réglages** : la carte n'a pas d'EEPROM, les réglages sont donc enregistrés dans sa mémoire flash.
-- **Maintenance « en direct »** : une mesure toutes les 5 s, pour voir les valeurs bouger.
-- **Commandes en plus** : `CONFIG`, `HELP` et `EXIT`, pour faciliter l'utilisation et les démonstrations.
+- **Maintenance « en direct »** : une mesure toutes les 10 s, pour voir les valeurs bouger.
+- **Commandes en plus** : `CONFIG` et `HELP`, qui affichent seulement les réglages et l'aide. Elles ne changent aucun comportement demandé par le PDF.
+- **Limites de LOG_INTERVAL, TIMEOUT et FILE_MAX_SIZE** : le PDF ne les donne pas ; nous avons fixé 1-1440 min, 1-300 s et 512-32768 octets pour refuser les valeurs absurdes.

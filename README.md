@@ -1,166 +1,375 @@
 # Worldwide Weather Watcher
 
-Station météorologique embarquée destinée à la surveillance des paramètres
-environnementaux susceptibles d'influencer la formation de cyclones et
-d'autres catastrophes naturelles.
+Station météo embarquée réalisée dans le cadre du projet *Système embarqué* du CESI.
+Installée à bord d'un navire, elle mesure la température, l'humidité, la pression,
+la luminosité et la position GPS. Elle date chaque mesure et indique son état avec
+une LED. Deux boutons permettent de passer d'un mode de fonctionnement à l'autre.
 
-Le projet est réalisé dans le cadre du projet système embarqué du CESI. La
-station a vocation à être installée à bord de navires et à être utilisée
-simplement par un membre de l'équipage.
+> Ce document explique **comment le programme est organisé** et **à quoi sert chaque fichier et chaque fonction**.
+> L'avancement détaillé par rapport au cahier des charges est dans [CHECKLIST.md](CHECKLIST.md).
 
-## Objectifs
+---
 
-La station doit permettre de :
+## Sommaire
 
-- mesurer les paramètres météorologiques et environnementaux ;
-- horodater les mesures ;
-- enregistrer les données sur une carte SD ;
-- informer l'utilisateur de l'état du système grâce à une LED RGB ;
-- être pilotée à l'aide de deux boutons poussoirs ;
-- proposer plusieurs modes de fonctionnement adaptés à l'utilisation à bord.
+1. [Matériel et branchements](#1-matériel-et-branchements)
+2. [Compiler, téléverser, utiliser](#2-compiler-téléverser-utiliser)
+3. [Les modes de fonctionnement](#3-les-modes-de-fonctionnement)
+4. [Le code LED](#4-le-code-led)
+5. [Organisation du code](#5-organisation-du-code)
+6. [Le déroulement du programme](#6-le-déroulement-du-programme)
+7. [Fichier par fichier : rôle et fonctions](#7-fichier-par-fichier--rôle-et-fonctions)
+8. [Choix techniques](#8-choix-techniques)
+9. [État du projet](#9-état-du-projet)
 
-## Matériel
+---
 
-Le prototype s'appuie sur une carte **STM32 Nucleo-L476RG**, équipée d'un
-microcontrôleur ARM Cortex-M4, et sur les composants suivants :
+## 1. Matériel et branchements
 
-| Composant | Interface | Fonction |
-| --- | --- | --- |
-| Lecteur de carte SD | SPI | Sauvegarde des mesures |
-| Horloge RTC DS1307 | I2C | Date et heure des mesures |
-| LED RGB Grove | 2 fils | Indication de l'état du système |
-| Deux boutons poussoirs | Numérique | Interaction avec l'utilisateur |
-| Capteur BME280 (driver compatible BME680) | I2C | Pression, température et hygrométrie |
-| GPS Air530Z | UART | Position et données GPS |
-| Capteur de luminosité Grove | Analogique | Mesure de la luminosité |
+Carte **STM32 Nucleo-L476RG** (microcontrôleur ARM Cortex-M4) avec un shield Grove.
 
-Des extensions pourront être intégrées ultérieurement :
+| Module | Port du shield | Broches STM32 | Liaison |
+|---|---|---|---|
+| Capteur **BME280** (température, humidité, pression) | I2C | PB8 (SCL), PB9 (SDA) | I2C, adresse 0x76 |
+| Horloge **RTC DS1307** | I2C | PB8 (SCL), PB9 (SDA) | I2C, adresse 0x68 |
+| **GPS** Air530Z | A0 | PA0 (réception), PA1 (émission) | UART4, 9600 bauds |
+| Capteur de **luminosité** | A2 | PA4 | entrée analogique (ADC) |
+| **LED** RGB P9813 | D2 | PB3 (données), PA10 (horloge) | 2 fils |
+| **Boutons** rouge et vert | D7 | PA8 (rouge), PA9 (vert) | entrées numériques |
+| Lecteur de **carte SD** | SPI | PA5, PA6, PA7, CS sur PB5 | SPI (pas encore fonctionnel) |
+| **Moniteur série** (PC) | câble USB | PA2, PA3 | USART2, 115200 bauds |
 
-- température de l'eau ;
-- force du courant marin ;
-- force du vent ;
-- concentration de particules fines.
+Toutes les broches sont définies à un seul endroit : [include/board_pins.h](include/board_pins.h).
 
-### Câblage principal
+> Le capteur monté est un **BME280** (identifiant 0x60). Le driver reconnaît aussi le BME680 (identifiant 0x61).
 
-Le câblage détaillé est défini dans
-[`include/board_pins.h`](include/board_pins.h). Les interfaces principales
-sont les suivantes :
+---
 
-- **I2C1** : PB8 (SCL) et PB9 (SDA) pour la RTC (0x68) et le BME280 (0x76) ;
-- **SPI1** : PA5 (SCK), PA6 (MISO) et PA7 (MOSI) pour le lecteur SD ;
-- **USART2** : PA2 (TX) et PA3 (RX) pour le moniteur série ;
-- **boutons** : PA8 (rouge) et PA9 (vert), port Grove D7 ;
-- **luminosité** : PA4, entrée ADC, port Grove A2 ;
-- **carte SD** : CS sur PB5 (D4) ;
-- **LED RGB** : données sur PB3 et horloge sur PA10, port Grove D2 ;
-- **GPS** : UART4 sur PA0 (RX) et PA1 (TX), port Grove A0, 9600 bauds.
+## 2. Compiler, téléverser, utiliser
 
-> Le shield SD doit être relié aux broches SPI de la carte Nucleo à l'aide de
-> fils Dupont. Vérifier le câblage et l'alimentation avant toute mise sous
-> tension.
+Il faut **VS Code** et l'extension **PlatformIO**.
 
-## Modes de fonctionnement
+```bash
+pio run                  # compiler
+pio run -t upload        # téléverser sur la carte
+pio device monitor       # ouvrir le moniteur série (115200 bauds)
+```
 
-L'architecture prévoit quatre modes :
+Au démarrage, le moniteur série affiche :
 
-- **Standard** : fonctionnement nominal et acquisition des mesures ;
-- **Configuration** : réglage des paramètres de la station ;
-- **Économique** : réduction de la consommation énergétique ;
-- **Maintenance** : diagnostic et vérification du matériel.
+```
+[CONFIG] Parametres charges depuis la memoire (EEPROM)
+[BOOT] Demarrage nominal -> MODE STANDARD
+[I2C] Scan du bus : 0x68 0x76
+[RTC] 2026-10-13 14:30:00
+[GPS] Ecoute sur UART4 (port A0, 9600 bauds)
+[CAPTEUR] BME280 detecte en 0x76, calibration chargee
 
-Les fonctionnalités de chaque mode seront complétées au fur et à mesure de
-l'avancement du projet.
+----- Mesure du 13/10/2026 a 14:30:01 -----
+  Temperature : 24.1 C
+  Humidite    : 52.0 %
+  Pression    : 994.5 hPa
+  Luminosite  : 412 / 1023 (moyenne)
+  Position    : 43.296482 N, 5.369780 E (7 satellites)
+```
 
-## Architecture du dépôt
+---
+
+## 3. Les modes de fonctionnement
+
+| Mode | LED | Comment y entrer | Ce qu'il fait |
+|---|---|---|---|
+| **Standard** | 🟢 vert | démarrage normal | une mesure toutes les **LOG_INTERVAL** minutes (10 par défaut) |
+| **Configuration** | 🟡 jaune | démarrer en maintenant le **bouton rouge** | mesures arrêtées, réglages par commandes série |
+| **Économique** | 🔵 bleu | **vert 5 s** depuis le standard | mesures 2 fois moins souvent, GPS lu une mesure sur deux |
+| **Maintenance** | 🟠 orange | **rouge 5 s** depuis le standard ou l'économique | mesures en direct toutes les 10 s, carte SD non utilisée |
+
+```
+🟢 STANDARD   ──vert 5 s──►  🔵 ÉCONOMIQUE ──vert 5 s──►  🟢 STANDARD
+🟢 STANDARD   ──rouge 5 s─►  🟠 MAINTENANCE ──rouge 5 s─► 🟢 STANDARD
+🔵 ÉCONOMIQUE ──rouge 5 s─►  🟠 MAINTENANCE ──rouge 5 s─► 🔵 ÉCONOMIQUE
+                                             (retour au mode d'avant)
+
+Démarrage avec le bouton rouge ──► 🟡 CONFIGURATION ──(30 min sans activité)──► 🟢 STANDARD
+```
+
+### Commandes du mode configuration
+
+À taper dans le moniteur série, puis Entrée :
+
+| Commande | Effet | Exemple |
+|---|---|---|
+| `NOM=valeur` | change un réglage (valeur contrôlée, puis enregistrée) | `LOG_INTERVAL=5` |
+| `RESET` | remet tous les réglages par défaut | |
+| `VERSION` | affiche la version et le numéro de lot | |
+| `CLOCK=HH:MM:SS` | règle l'heure | `CLOCK=14:30:00` |
+| `DATE=MM,JJ,AAAA` | règle la date | `DATE=10,13,2026` |
+| `DAY=MON..SUN` | règle le jour de la semaine | `DAY=TUE` |
+| `CONFIG` | affiche tous les réglages *(ajout, affichage seulement)* | |
+| `HELP` | affiche l'aide *(ajout, affichage seulement)* | |
+
+Pour quitter le mode configuration : attendre 30 min sans activité, ou redémarrer la carte sans appuyer sur le bouton rouge.
+
+Les réglages possibles et leurs limites sont listés dans [CHECKLIST.md](CHECKLIST.md#-5-mode-configuration-led-jaune).
+
+---
+
+## 4. Le code LED
+
+| LED | Signification |
+|---|---|
+| 🟢 / 🟡 / 🔵 / 🟠 fixe | mode standard / configuration / économique / maintenance |
+| 🔴🔵 rouge / bleu | l'horloge RTC ne répond pas |
+| 🔴🟡 rouge / jaune | le GPS ne répond pas |
+| 🔴🟢 rouge / vert | un capteur ne répond pas |
+| 🔴🟢 rouge / vert, vert 2× plus long | une valeur mesurée est hors des seuils |
+| 🔴⚪ rouge / blanc | carte SD pleine |
+| 🔴⚪ rouge / blanc, blanc 2× plus long | erreur d'écriture sur la carte SD |
+
+Les erreurs clignotent à 1 Hz. Si plusieurs pannes surviennent en même temps, la LED affiche la plus prioritaire (dans l'ordre du tableau).
+
+---
+
+## 5. Organisation du code
+
+Le code est découpé en **3 couches**. Chaque couche n'utilise que celle du dessous.
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  PROGRAMME PRINCIPAL                                         src/    │
+│  main.c : démarrage, boucle principale, rythme des mesures par mode  │
+├──────────────────────────────────────────────────────────────────────┤
+│  MODULES DE L'APPLICATION                                    src/    │
+│  buttons.c        boutons et changements de mode                     │
+│  acquisition.c    mesure de tous les capteurs, timeouts, alertes     │
+│  console.c        commandes du mode configuration                    │
+│  config.c         réglages et sauvegarde en mémoire flash            │
+│  system_status.c  couleur et clignotement de la LED                  │
+│  setup.c          initialisation de la carte (horloge, I2C, SPI…)    │
+├──────────────────────────────────────────────────────────────────────┤
+│  DRIVERS DES COMPOSANTS                         lib/cesi_grove/      │
+│  grove_bme680.c   grove_rtc_ds1307.c   grove_gps_air530z.c           │
+│  grove_light.c    grove_rgb.c          sd_logger.c                   │
+├──────────────────────────────────────────────────────────────────────┤
+│  STM32Cube HAL (bibliothèque de ST pour piloter le microcontrôleur)  │
+└──────────────────────────────────────────────────────────────────────┘
+```
 
 ```text
 .
-├── include/              # En-têtes du projet et définition du câblage
-├── lib/cesi_grove/       # Drivers des composants Grove
-├── src/                  # Code applicatif et initialisation STM32
-├── test/                 # Tests et documentation de test
-├── .vscode/              # Recommandations pour l'environnement VS Code
-└── platformio.ini        # Configuration de compilation PlatformIO
+├── include/              en-têtes des modules (.h)
+│   ├── board_pins.h      branchements de tous les modules
+│   ├── cesi_types.h      types partagés (date, mesures, GPS)
+│   ├── modes.h           les 4 modes
+│   └── version.h         version et numéro de lot
+├── src/                  modules de l'application (.c)
+├── lib/cesi_grove/       drivers des composants Grove
+├── platformio.ini        configuration de compilation
+├── CHECKLIST.md          avancement par rapport au cahier des charges
+└── README.md             ce document
 ```
 
-## Prérequis
+---
 
-- Visual Studio Code ;
-- extension [PlatformIO IDE](https://platformio.org/install/ide?install=vscode) ;
-- carte STM32 Nucleo-L476RG ;
-- composants et câblage décrits dans la section [Matériel](#matériel).
+## 6. Le déroulement du programme
 
-Le projet utilise :
+### Au démarrage (`main()`)
 
-- **PlatformIO** ;
-- **STM32Cube HAL** ;
-- la plateforme `ststm32` ;
-- l'environnement `nucleo_l476rg`.
+1. `Global_Init()` initialise la carte : horloge, I2C, SPI et moniteur série.
+2. `Console_Init()`, `GroveRGB_Init()` et `GroveLight_Init()` préparent la console, la LED et le capteur de lumière.
+3. `Config_Load()` relit les réglages enregistrés, ou prend les valeurs par défaut.
+4. `check_boot_mode()` choisit le mode **configuration** si le bouton rouge est appuyé, sinon **standard**.
+5. Le bus I2C est scanné, puis `rtc_check()` vérifie l'horloge. Si elle est arrêtée, elle est mise à l'heure de la compilation.
+6. `GroveGPS_Init()` et `GroveBME680_Init()` démarrent le GPS et le capteur BME280.
 
-## Compiler le projet
+### La boucle principale
 
-Depuis la racine du dépôt :
+Le programme ne s'arrête **jamais** pour attendre un capteur : chaque tour de boucle est très court. Les boutons répondent donc toujours, même pendant une mesure.
 
-```bash
-pio run
+```
+while (1) {
+   A. process_button_presses()   lit les boutons, change de mode après 5 s
+      Console_Process()          exécute les commandes tapées au clavier
+      GroveGPS_Process()         décode les trames GPS reçues en arrière-plan
+
+   B. le mode a changé ?         annonce le nouveau mode, mesure tout de suite
+
+   C. c'est l'heure de mesurer ? Acquisition_Start()
+         standard    : toutes les LOG_INTERVAL minutes
+         économique  : toutes les LOG_INTERVAL × 2 minutes, GPS une fois sur deux
+         maintenance : toutes les 10 secondes
+         configuration : jamais
+
+   D. Acquisition_Poll()         la mesure est finie ? -> affichage + mise à jour des alertes
+
+   E. SystemStatus_Update()      couleur ou clignotement de la LED
+}
 ```
 
-Pour nettoyer les fichiers générés :
+### Une mesure (`acquisition.c`)
 
-```bash
-pio run --target clean
+```
+Acquisition_Start()
+   ├─ lit l'heure sur la RTC (en cas d'échec : alerte RTC)
+   └─ prépare la lecture des capteurs
+
+Acquisition_Poll(), à chaque tour de boucle :
+   ├─ toutes les 200 ms, réessaie les capteurs qui n'ont pas encore répondu
+   │     read_env()    BME280 : température, humidité, pression
+   │     read_light()  luminosité (vérifie d'abord que le capteur est branché)
+   │     read_gps()    attend une nouvelle position GPS
+   ├─ tous ont répondu, ou TIMEOUT (30 s) est dépassé ?
+   │     ├─ capteur sans réponse      -> "indisponible" (NA)
+   │     ├─ 2 mesures sans réponse    -> capteur en erreur (LED)
+   │     └─ valeur hors des seuils    -> donnée incohérente (LED)
+   └─ renvoie la mesure complète
 ```
 
-Pour téléverser le programme sur la carte, connecter la Nucleo puis exécuter :
+---
 
-```bash
-pio run --target upload
-```
+## 7. Fichier par fichier : rôle et fonctions
 
-Le moniteur série est configuré à **115200 bauds** :
+### Programme principal
 
-```bash
-pio device monitor
-```
+#### [src/main.c](src/main.c) — démarrage et boucle principale
 
-Au démarrage, le programme affiche l'état d'initialisation sur le port série
-et traite les actions des boutons.
+| Fonction | Rôle |
+|---|---|
+| `main()` | initialise tout, puis exécute la boucle principale décrite plus haut |
+| `acquisition_period_ms()` | temps entre 2 mesures selon le mode (0 en configuration) |
+| `announce_mode()` | affiche un message à l'entrée dans chaque mode |
+| `rtc_check()` | vérifie la RTC au démarrage et la met à l'heure si elle est arrêtée |
+| `build_datetime()` | calcule la date et l'heure de compilation (avec le jour de la semaine) |
 
-## État actuel
+### Modules de l'application
 
-Le socle du firmware est en place :
+#### [src/buttons.c](src/buttons.c) — boutons et changements de mode
 
-- initialisation STM32Cube HAL ;
-- initialisation des interfaces I2C, SPI et UART ;
-- drivers Grove intégrés au projet ;
-- gestion initiale des boutons et de la LED RGB ;
-- déclaration des quatre modes de fonctionnement ;
-- configuration PlatformIO pour la Nucleo-L476RG.
+Chaque bouton a 3 états : *relâché*, *appui en cours* et *action faite*. L'état *action faite* évite de déclencher l'action plusieurs fois tant que le bouton reste appuyé.
 
-Les fonctions d'acquisition complète, d'enregistrement des mesures et de
-gestion détaillée des modes restent à développer et à valider sur le
-prototype.
+| Fonction | Rôle |
+|---|---|
+| `buttons_init()` | configure PA8 et PA9 en entrées avec résistance de tirage vers le haut |
+| `check_boot_mode()` | au démarrage : mode configuration si le rouge est appuyé |
+| `process_button_presses()` | détecte les appuis de 5 s et change de mode ; gère le retour automatique après 30 min en configuration |
+| `buttons_config_activity()` | relance le délai de 30 min (appelée à chaque commande reçue) |
+| `print_mode()` | affiche le mode actif sur le moniteur série |
 
-## Livrables du projet
+#### [src/acquisition.c](src/acquisition.c) — mesure des capteurs
 
-Le projet est organisé autour des livrables suivants :
+| Fonction | Rôle |
+|---|---|
+| `Acquisition_Start(with_gps)` | lance une mesure ; `with_gps = false` en économique une fois sur deux |
+| `Acquisition_Poll(&mesure)` | fait avancer la mesure ; renvoie `true` quand elle est terminée |
+| `Acquisition_IsRunning()` | indique si une mesure est en cours |
+| `Acquisition_GetHealth()` | état des capteurs : RTC, GPS, capteurs, données cohérentes |
+| `Acquisition_Print()` | affiche la mesure de façon lisible sur le moniteur série |
+| `Acquisition_FormatLine()` | écrit la mesure sur une ligne `date;temp;hum;pres;lum;niveau;lat;lon`, le format prévu pour la carte SD |
+| `read_env()` / `read_light()` / `read_gps()` | lecture de chaque capteur (fonctions internes) |
+| `update_timeouts()` | compte les mesures consécutives sans réponse d'un capteur |
+| `data_coherent()` | vérifie la température et la pression par rapport aux seuils |
 
-1. **Analyse du système** : diagrammes UML/SysML, algorithmes et analyse
-   fonctionnelle ;
-2. **Architecture du programme** : structure des modules, fonctions et
-   variables ;
-3. **Maquette** : démonstration du programme et du montage sur la Nucleo ;
-4. **Documentation** : documentation technique et guide utilisateur.
+#### [src/console.c](src/console.c) — commandes du mode configuration
+
+Les caractères tapés arrivent **par interruption** dans un tampon. La boucle principale les traite ensuite, ce qui évite d'en perdre.
+
+| Fonction | Rôle |
+|---|---|
+| `Console_Init()` | démarre la réception des caractères sur USART2 |
+| `Console_Process()` | renvoie les caractères tapés à l'écran, gère la touche Retour arrière, exécute la ligne à l'appui sur Entrée |
+| `Console_PrintHelp()` | affiche la liste des commandes |
+| `execute()` | reconnaît la commande et appelle la bonne fonction ; refuse les commandes hors du mode configuration |
+| `cmd_param()` / `cmd_clock()` / `cmd_date()` / `cmd_day()` | traitement de chaque commande, avec vérification du format |
+| `HAL_UART_RxCpltCallback()` | appelée à chaque caractère reçu : moniteur série (USART2) ou GPS (UART4) |
+
+#### [src/config.c](src/config.c) — réglages et mémoire
+
+Tous les réglages sont décrits dans un tableau `params[]` : nom, emplacement en mémoire, valeur minimale et maximale. Ajouter un réglage revient à ajouter une ligne à ce tableau.
+
+| Fonction | Rôle |
+|---|---|
+| `Config_LoadDefaults()` | valeurs par défaut du cahier des charges |
+| `Config_Load()` | relit les réglages en mémoire flash au démarrage |
+| `Config_Save()` | enregistre les réglages en mémoire flash |
+| `Config_Set(nom, valeur)` | modifie un réglage après avoir vérifié la valeur et les seuils (seuil bas < seuil haut) |
+| `Config_GetRange()` | limites autorisées d'un réglage (pour les messages d'erreur) |
+| `Config_Print()` | affiche tous les réglages |
+
+#### [src/system_status.c](src/system_status.c) — LED
+
+| Fonction | Rôle |
+|---|---|
+| `SystemStatus_Init()` | prépare le suivi du clignotement |
+| `SystemStatus_Update()` | affiche le code d'erreur le plus prioritaire, ou la couleur du mode |
+| `get_error()` | choisit l'erreur à afficher, sa couleur et la durée de chaque couleur |
+| `set_color()` | n'envoie une couleur à la LED que si elle a changé |
+
+#### [src/setup.c](src/setup.c) — initialisation de la carte
+
+| Fonction | Rôle |
+|---|---|
+| `Global_Init()` | appelle toutes les initialisations ci-dessous |
+| `SystemClock_Config()` | horloge du microcontrôleur (MSI, 4 MHz) |
+| `MX_I2C1_Init()` / `MX_SPI1_Init()` / `MX_USART2_UART_Init()` | bus I2C, bus SPI et moniteur série |
+| `HAL_UART_MspInit()` | broches et interruptions des liaisons série (moniteur et GPS) |
+| `_write()` | redirige `printf` vers le moniteur série |
+
+### Drivers des composants (`lib/cesi_grove/`)
+
+| Fichier | Composant | Fonctions principales |
+|---|---|---|
+| [grove_bme680.c](lib/cesi_grove/src/grove_bme680.c) | capteur BME280 / BME680 | `GroveBME680_Init()` détecte le capteur et lit sa calibration · `GroveBME680_ReadEnvironment()` lance une mesure et calcule les valeurs avec les formules du fabricant (Bosch) |
+| [grove_rtc_ds1307.c](lib/cesi_grove/src/grove_rtc_ds1307.c) | horloge RTC | `GroveRTC_GetDateTime()` · `GroveRTC_SetDateTime()` · `GroveRTC_IsRunning()` |
+| [grove_gps_air530z.c](lib/cesi_grove/src/grove_gps_air530z.c) | GPS | `GroveGPS_Init()` démarre la réception par interruption · `GroveGPS_Process()` vérifie et décode les trames de position (GGA) · `GroveGPS_GetLast()` renvoie la dernière position |
+| [grove_light.c](lib/cesi_grove/src/grove_light.c) | luminosité | `GroveLight_ReadRaw()` lecture 0-4095 · `GroveLight_IsConnected()` détecte un capteur débranché |
+| [grove_rgb.c](lib/cesi_grove/src/grove_rgb.c) | LED RGB | `GroveRGB_SetColor(r, g, b)` · `GroveRGB_Off()` |
+| [sd_logger.c](lib/cesi_grove/src/sd_logger.c) | carte SD | `SDLogger_Init()` démarre la carte en SPI · `SDLogger_BitBangCMD0Test()` diagnostic du câblage · l'écriture de fichiers reste à faire |
+
+### Fichiers d'en-tête utiles
+
+| Fichier | Contenu |
+|---|---|
+| [include/board_pins.h](include/board_pins.h) | toutes les broches utilisées |
+| [include/cesi_types.h](include/cesi_types.h) | `RTC_DateTime` (date et heure), `Env_Data` (température, humidité, pression), `GPS_Data` (position) |
+| [include/modes.h](include/modes.h) | les 4 modes et la variable globale `mode_actuel` |
+| [include/config.h](include/config.h) | la structure `Config` qui contient tous les réglages |
+| [include/acquisition.h](include/acquisition.h) | la structure `Measurement` (une mesure complète) |
+| [include/version.h](include/version.h) | version du programme et numéro de lot |
+
+---
+
+## 8. Choix techniques
+
+| Choix | Pourquoi |
+|---|---|
+| **Programme non bloquant** | une mesure avance petit à petit à chaque tour de boucle ; les boutons et la console répondent toujours |
+| **Réception GPS et clavier par interruption** | aucun caractère n'est perdu, même pendant une mesure |
+| **Détection du capteur de lumière débranché** | l'entrée est chargée vers 0 V puis vers 3,3 V : si les deux lectures diffèrent, rien n'est branché |
+| **Réglages en mémoire flash** | la carte n'a pas d'EEPROM ; un code de reconnaissance et une somme de contrôle protègent les données |
+| **Vert pour sortir de l'économique** | le PDF donne deux rôles au bouton rouge en économique ; chaque bouton garde ainsi un seul rôle |
+| **Maintenance toutes les 10 s** | le PDF demande un affichage « en direct » sans préciser le rythme |
+| **Commandes `CONFIG` et `HELP`** | ajoutées pour l'ergonomie ; elles affichent seulement des informations et ne changent aucun comportement demandé |
+| **Limites de LOG_INTERVAL, TIMEOUT et FILE_MAX_SIZE** | non données par le PDF : 1-1440 min, 1-300 s et 512-32768 octets, pour refuser les valeurs absurdes |
+
+---
+
+## 9. État du projet
+
+| Partie | État |
+|---|---|
+| Capteurs (BME280, RTC, GPS, luminosité) | ✅ fonctionnels, pannes détectées |
+| LED (modes et codes d'erreur) | ✅ |
+| Les 4 modes et les boutons | ✅ |
+| Mode configuration et sauvegarde des réglages | ✅ |
+| **Carte SD** (fichiers `AAMMJJ_0.LOG`, rotation, carte pleine) | ❌ à faire : la carte ne répond pas encore (câblage à vérifier) |
+| Livrables (diagrammes, documentation, guide utilisateur) | ❌ à faire |
+
+---
 
 ## Ressources
 
 - [Documentation STM32 Nucleo-L476RG](https://stm32python.gitlab.io/fr/docs/Kit/nucleo_l476rg)
-- [Dépôt d'architecture Worldwide Weather Watcher](https://github.com/ValentinMoraine/Worldwide-Weather-Watcher)
 - [Documentation PlatformIO](https://docs.platformio.org/)
-- [Ressources pédagogiques du projet CESI](https://scenari.cesi.fr/scenari/cas/IDB_105_CPI_A2_Informatique___S3E_26_27_Septembre_Etudiant_FR/8_-_Projet.html)
+- [Dépôt d'architecture Worldwide Weather Watcher](https://github.com/ValentinMoraine/Worldwide-Weather-Watcher)
 
-## Équipe
-
-Projet réalisé par l'équipe du dépôt
-[samyr13/Projet-Worldwide-Weather-Watcher](https://github.com/samyr13/Projet-Worldwide-Weather-Watcher).
+Projet réalisé par l'équipe du dépôt [samyr13/Projet-Worldwide-Weather-Watcher](https://github.com/samyr13/Projet-Worldwide-Weather-Watcher).

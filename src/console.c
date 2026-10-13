@@ -43,7 +43,6 @@ void Console_PrintHelp(void)
     printf("  CLOCK=HH:MM:SS        regle l'heure\r\n");
     printf("  DATE=MM,JJ,AAAA       regle la date\r\n");
     printf("  DAY=MON..SUN          regle le jour de la semaine\r\n");
-    printf("  EXIT                  quitte le mode configuration\r\n");
     printf("  HELP                  affiche cette aide\r\n");
 }
 
@@ -206,10 +205,6 @@ static void execute(char *cmd)
         Config_Print();
     } else if (strcmp(cmd, "HELP") == 0) {
         Console_PrintHelp();
-    } else if (strcmp(cmd, "EXIT") == 0) {
-        mode_actuel = MODE_STANDARD;
-        printf("Sortie du mode configuration\r\n");
-        print_mode(mode_actuel);
     } else {
         printf("ERREUR : commande inconnue (HELP pour la liste)\r\n");
     }
