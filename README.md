@@ -61,12 +61,10 @@ Au démarrage, le moniteur série affiche :
 ```
 [CONFIG] Parametres charges depuis la memoire (EEPROM)
 [BOOT] Demarrage nominal -> MODE STANDARD
-[I2C] Scan du bus : 0x68 0x76
 [RTC] 2026-10-14 11:09:33
 [GPS] Ecoute sur UART4 (port A0, 9600 bauds)
 [CAPTEUR] BME280 detecte en 0x76, calibration chargee
 [SD] Carte montee : FAT32, 7544 Mo
-[SD]   261014_0.LOG         148 octets
 [MEM] Tas : 1204 octets utilises, 92268 octets disponibles avant la pile
 
 ----- Mesure du 14/10/2026 a 11:09:34 -----
@@ -114,7 +112,7 @@ Démarrage avec le bouton rouge ──► 🟡 CONFIGURATION ──(30 min sans 
 | `DATE=MM,JJ,AAAA` | règle la date | `DATE=10,13,2026` |
 | `DAY=MON..SUN` | règle le jour de la semaine | `DAY=TUE` |
 | `CONFIG` | affiche tous les réglages *(ajout, affichage seulement)* | |
-| `HELP` | affiche l'aide *(ajout, affichage seulement)* | |
+| `HELP` | affiche la liste des commandes *(ajout, affichage seulement)* | |
 
 Pour quitter le mode configuration : attendre 30 min sans activité, ou redémarrer la carte sans appuyer sur le bouton rouge.
 
@@ -194,9 +192,9 @@ Le code est découpé en **3 couches**. Chaque couche n'utilise que celle du des
 2. `Console_Init()`, `GroveRGB_Init()` et `GroveLight_Init()` préparent la console, la LED et le capteur de lumière.
 3. `Config_Load()` relit les réglages enregistrés, ou prend les valeurs par défaut.
 4. `check_boot_mode()` choisit le mode **configuration** si le bouton rouge est appuyé, sinon **standard**.
-5. Le bus I2C est scanné, puis `rtc_check()` vérifie l'horloge si elle est installée (`RTC_PRESENT`). Si elle est arrêtée, elle est mise à l'heure de la compilation.
+5. `rtc_check()` affiche l'heure de l'horloge RTC (réglage avec les commandes `CLOCK`, `DATE` et `DAY`).
 6. `GroveGPS_Init()` et `GroveBME680_Init()` démarrent le GPS et le capteur BME280.
-7. `DataLog_Init()` monte la carte SD et affiche son contenu.
+7. `DataLog_Init()` monte la carte SD.
 
 ### La boucle principale
 
@@ -256,7 +254,6 @@ Acquisition_Poll(), à chaque tour de boucle :
 | `acquisition_period_ms()` | temps entre 2 mesures selon le mode (0 en configuration) |
 | `announce_mode()` | affiche un message à l'entrée dans chaque mode |
 | `rtc_check()` | vérifie la RTC au démarrage et la met à l'heure si elle est arrêtée |
-| `build_datetime()` | calcule la date et l'heure de compilation (avec le jour de la semaine) |
 
 ### Modules de l'application
 
@@ -299,7 +296,7 @@ Quand l'ajout d'une ligne ferait dépasser **FILE_MAX_SIZE**, le fichier est arc
 
 | Fonction | Rôle |
 |---|---|
-| `DataLog_Init()` | monte la carte au démarrage, affiche son type, sa taille et son contenu |
+| `DataLog_Init()` | monte la carte au démarrage et affiche son type et sa taille |
 | `DataLog_Write(&mesure)` | ajoute la mesure au fichier ; archive le fichier s'il est plein ; remonte la carte si elle a été retirée puis remise |
 | `DataLog_Release()` | libère la carte à l'entrée en maintenance, pour pouvoir la retirer sans risque |
 | `DataLog_IsOk()` / `DataLog_HasSpace()` | état de la carte pour la LED : erreur d'accès ou carte pleine |
@@ -367,7 +364,7 @@ Tous les réglages sont décrits dans un tableau `params[]` : nom, emplacement e
 | Fichier | Composant | Fonctions principales |
 |---|---|---|
 | [grove_bme680.c](lib/cesi_grove/src/grove_bme680.c) | capteur BME280 / BME680 | `GroveBME680_Init()` détecte le capteur et lit sa calibration · `GroveBME680_ReadEnvironment()` lance une mesure et calcule les valeurs avec les formules du fabricant (Bosch) |
-| [grove_rtc_ds1307.c](lib/cesi_grove/src/grove_rtc_ds1307.c) | horloge RTC | `GroveRTC_GetDateTime()` · `GroveRTC_SetDateTime()` · `GroveRTC_IsRunning()` |
+| [grove_rtc_ds1307.c](lib/cesi_grove/src/grove_rtc_ds1307.c) | horloge RTC | `GroveRTC_GetDateTime()` · `GroveRTC_SetDateTime()` |
 | [grove_gps_air530z.c](lib/cesi_grove/src/grove_gps_air530z.c) | GPS | `GroveGPS_Init()` démarre la réception par interruption · `GroveGPS_Process()` vérifie et décode les trames de position (GGA) · `GroveGPS_GetLast()` renvoie la dernière position |
 | [grove_light.c](lib/cesi_grove/src/grove_light.c) | luminosité | `GroveLight_ReadRaw()` lecture 0-4095 · `GroveLight_IsConnected()` détecte un capteur débranché |
 | [grove_rgb.c](lib/cesi_grove/src/grove_rgb.c) | LED RGB | `GroveRGB_SetColor(r, g, b)` · `GroveRGB_Off()` |
@@ -438,9 +435,9 @@ Les petites variables (indices, valeurs lues, structures de quelques octets) res
 | **Fichiers de la carte SD au format CSV** (séparateur `;`) | le PDF demande « une seule ligne horodatée » sans imposer de format ; le CSV s'ouvre directement dans Excel (en renommant `.LOG` en `.csv`) |
 | **Archivage par renommage** | le PDF demande une copie du fichier plein puis une reprise au début de `_0` : renommer `_0` en `_N` puis créer un `_0` neuf donne exactement le même résultat, plus rapidement |
 | **`000000_0.LOG` si l'heure est indisponible** | si la RTC ne répond pas, la date est inconnue : `000000` garde le format `AAMMJJ` du PDF tout en indiquant clairement l'absence de date, et aucune mesure n'est perdue |
-| **FILE_MAX_SIZE : 2 Ko par défaut, 4096 conseillé** | le PDF fixe 2 Ko par défaut, valeur conservée. Mais la carte range les fichiers par blocs de 4 Ko : un fichier de 2 Ko laisse la moitié de son bloc vide. Avec `FILE_MAX_SIZE=4096` (l'exemple du PDF), il y a **2 fois moins de fichiers** et plus aucun espace perdu. À 10 min par mesure : environ 1 500 fichiers et 9 Mo par an avec 2 Ko, environ 750 fichiers avec 4 Ko |
-| **Commandes `CONFIG` et `HELP`** | ajoutées pour l'ergonomie ; elles affichent seulement des informations et ne changent aucun comportement demandé |
+| **FILE_MAX_SIZE : 2 Ko par défaut, 4096 conseillé** | le PDF fixe 2 Ko par défaut, valeur conservée. Mais la carte range les fichiers par blocs de 4 Ko : un fichier de 2 Ko laisse la moitié de son bloc vide. Avec `FILE_MAX_SIZE=4096` (l'exemple du PDF), il y a **2 fois moins de fichiers** et plus aucun espace perdu. À 10 min par mesure : environ 1 500 fichiers et 6 Mo par an avec 2 Ko (1 500 × 4 Ko), environ 750 fichiers avec 4 Ko |
 | **Limites de LOG_INTERVAL, TIMEOUT et FILE_MAX_SIZE** | non données par le PDF : 1-1440 min, 1-300 s et 512-32768 octets, pour refuser les valeurs absurdes |
+| **Commandes `CONFIG` et `HELP`** (mode configuration) | ajoutées pour afficher les réglages actuels et la liste des commandes ; elles ne modifient rien |
 
 ---
 

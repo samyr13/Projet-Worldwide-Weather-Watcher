@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <string.h>
 #include "stm32l4xx_hal.h"
 #include "setup.h"
 #include "cesi_types.h"
@@ -10,7 +9,6 @@
 #include "grove_rtc_ds1307.h"
 #include "grove_bme680.h"
 #include "grove_gps_air530z.h"
-#include "board_pins.h"
 
 // Modules applicatifs
 #include "modes.h"
@@ -24,8 +22,6 @@
 
 // Mode maintenance : données consultables "en direct" sur le port série
 #define MAINTENANCE_PERIOD_MS 10000
-
-extern I2C_HandleTypeDef hi2c1;
 
 SystemMode mode_actuel = MODE_STANDARD;
 
@@ -73,57 +69,17 @@ static void announce_mode(SystemMode mode)
 }
 
 /**
- * @brief Date et heure de la compilation (__DATE__ = "Oct  9 2026", __TIME__ = "14:32:05")
- */
-static void build_datetime(RTC_DateTime *dt)
-{
-    static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
-    const char *date = __DATE__;
-    const char *time = __TIME__;
-    char month[4] = { date[0], date[1], date[2], '\0' };
-
-    dt->month   = (uint8_t)((strstr(months, month) - months) / 3 + 1);
-    dt->day     = (uint8_t)((date[4] == ' ' ? 0 : date[4] - '0') * 10 + (date[5] - '0'));
-    dt->year    = (uint16_t)((date[7] - '0') * 1000 + (date[8] - '0') * 100 + (date[9] - '0') * 10 + (date[10] - '0'));
-    dt->hours   = (uint8_t)((time[0] - '0') * 10 + (time[1] - '0'));
-    dt->minutes = (uint8_t)((time[3] - '0') * 10 + (time[4] - '0'));
-    dt->seconds = (uint8_t)((time[6] - '0') * 10 + (time[7] - '0'));
-
-    // Jour de la semaine (Sakamoto) : 1 = lundi ... 7 = dimanche
-    static const uint8_t t[] = { 0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4 };
-    uint16_t y = dt->year - (dt->month < 3);
-    uint8_t dow = (uint8_t)((y + y / 4 - y / 100 + y / 400 + t[dt->month - 1] + dt->day) % 7);
-    dt->dayOfWeek = (dow == 0) ? 7 : dow;
-}
-
-/**
- * @brief Vérifie la RTC et la démarre à l'heure de compilation si elle est arrêtée
+ * @brief Affiche l'heure de la RTC au démarrage (réglage : commandes CLOCK, DATE, DAY)
  */
 static void rtc_check(void)
 {
-    bool running = false;
-
-    if (!RTC_PRESENT) {
-        printf("[RTC] Horloge non installee (RTC_PRESENT = 0) : mesures sans heure\r\n");
-        return;
-    }
-
-    if (!GroveRTC_IsRunning(&running)) {
-        printf("[RTC] ERREUR : horloge injoignable sur I2C\r\n");
-        return;
-    }
-
-    if (!running) {
-        RTC_DateTime dt;
-        build_datetime(&dt);
-        GroveRTC_SetDateTime(&dt);
-        printf("[RTC] Horloge arretee -> reglee a l'heure de compilation\r\n");
-    }
-
     RTC_DateTime now;
+
     if (GroveRTC_GetDateTime(&now)) {
         printf("[RTC] %04u-%02u-%02u %02u:%02u:%02u\r\n",
                now.year, now.month, now.day, now.hours, now.minutes, now.seconds);
+    } else {
+        printf("[RTC] ERREUR : horloge injoignable sur I2C\r\n");
     }
 }
 
@@ -146,16 +102,6 @@ int main(void) {
 
     check_boot_mode();
 
-    // Diagnostic : liste des composants présents sur le bus I2C
-    // (attendu : 0x68 = RTC DS1307, 0x76 = BME280)
-    printf("[I2C] Scan du bus :");
-    for (uint8_t addr = 0x08; addr < 0x78; addr++) {
-        if (HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(addr << 1), 1, 10) == HAL_OK) {
-            printf(" 0x%02X", addr);
-        }
-    }
-    printf("\r\n");
-
     rtc_check();
 
     GroveGPS_Init();
@@ -169,7 +115,7 @@ int main(void) {
                GroveBME680_StatusToString(GroveBME680_GetLastStatus()), GroveBME680_GetFoundChipId());
     }
 
-    DataLog_Init(); // Carte SD : montage et affichage de son contenu
+    DataLog_Init(); // Carte SD : montage
 
     printf("[MEM] Tas : %u octets utilises, %u octets disponibles avant la pile\r\n",
            (unsigned)Heap_Used(), (unsigned)Heap_Available());

@@ -111,7 +111,7 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 | `DATE=` | règle la date (mois, jour, année) | `DATE=10,12,2026` |
 | `DAY=` | règle le jour de la semaine | `DAY=MON` |
 | `CONFIG` | affiche tous les réglages *(en plus du PDF, affichage seulement)* | |
-| `HELP` | affiche l'aide *(en plus du PDF, affichage seulement)* | |
+| `HELP` | affiche la liste des commandes *(en plus du PDF, affichage seulement)* | |
 
 **Pour quitter le mode configuration** (comme le PDF) : attendre **30 min sans activité**, ou redémarrer la carte sans appuyer sur le bouton rouge.
 
@@ -194,10 +194,18 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 - **Luminosité débranchée** : on charge l'entrée vers 0 V puis vers 3,3 V. Si les deux lectures sont très différentes, c'est que rien n'est branché.
 - **Mémoire des réglages** : la carte n'a pas d'EEPROM, les réglages sont donc enregistrés dans sa mémoire flash.
 - **Maintenance « en direct »** : une mesure toutes les 10 s, pour voir les valeurs bouger.
-- **Commandes en plus** : `CONFIG` et `HELP`, qui affichent seulement les réglages et l'aide. Elles ne changent aucun comportement demandé par le PDF.
 - **Limites de LOG_INTERVAL, TIMEOUT et FILE_MAX_SIZE** : le PDF ne les donne pas ; nous avons fixé 1-1440 min, 1-300 s et 512-32768 octets pour refuser les valeurs absurdes.
+- **Commandes `CONFIG` et `HELP`** (mode configuration) : affichent les réglages actuels et la liste des commandes. Elles ne modifient rien.
 - **Fichiers CSV** : le PDF demande « une seule ligne horodatée » sans imposer de format. Les colonnes sont séparées par `;`, ce qui permet d'ouvrir le fichier dans Excel.
 - **Archivage d'un fichier plein** : le PDF demande une copie puis une reprise au début de `_0`. Renommer `_0` en `_N` puis créer un `_0` neuf donne le même résultat, plus vite.
 - **`000000_0.LOG` si l'heure est indisponible** : si la RTC ne répond pas, la date est inconnue. `000000` garde le format du PDF tout en montrant qu'il n'y a pas de date, et la mesure n'est pas perdue.
 - **Mémoire (prosit « Il faut changer la pile ! »)** : la pile mesurée dépassait la réservation du linker script (1 728 o pour 1 Ko). Les tampons de la carte SD ont été déplacés dans le tas (un seul `malloc` au démarrage, test de `NULL`), le tas est protégé contre la collision avec la pile, et le linker script a été ajusté d'après les mesures (2 Ko de pile, 2 Ko de tas). Détails dans la section 8 du README.
-- **Nombre de fichiers LOG** : 2 Ko par défaut comme le PDF, soit environ 1 500 fichiers et 9 Mo par an (la carte de 8 Go ne sera jamais pleine). La carte range les fichiers par blocs de 4 Ko, donc un fichier de 2 Ko gaspille la moitié de son bloc : nous conseillons `FILE_MAX_SIZE=4096`, qui divise le nombre de fichiers par 2 sans espace perdu.
+- **Nombre de fichiers LOG** : 2 Ko par défaut comme le PDF, soit environ 1 500 fichiers et 6 Mo par an (1 500 × 4 Ko) (la carte de 8 Go ne sera jamais pleine). La carte range les fichiers par blocs de 4 Ko, donc un fichier de 2 Ko gaspille la moitié de son bloc : nous conseillons `FILE_MAX_SIZE=4096`, qui divise le nombre de fichiers par 2 sans espace perdu.
+
+### Petits ajouts non demandés par le PDF (sans effet sur le fonctionnement demandé)
+
+- **Première mesure dès le démarrage** : le PDF dit « à intervalle régulier » sans préciser quand commence la première mesure ; la faire tout de suite montre que la station fonctionne.
+- **Messages `/!\`** sous les mesures : la LED n'affiche que la panne la plus prioritaire ; en maintenance, ces messages montrent toutes les pannes en cours.
+- **Ligne `[MEM] Tas` au démarrage** : c'est l'« analyse du tas » demandée par le prosit 5.
+- **Valeur hors seuils gardée dans le fichier** : le PDF demande que le capteur « se mette en erreur » (LED) mais ne dit rien sur la valeur enregistrée ; on la garde pour ne pas perdre d'information.
+- **Code LED pour une valeur hors seuils** : le PDF dit « en erreur » sans préciser lequel de ses deux codes rouge / vert ; nous utilisons « données incohérentes » (vert 2× plus long), qui correspond à une valeur anormale.

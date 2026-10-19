@@ -55,7 +55,7 @@ ConfigSetResult Config_Set(const char *name, const char *value);
 // Domaine de définition d'un paramètre (false si inconnu)
 bool Config_GetRange(const char *name, long *min, long *max);
 
-// Affiche tous les paramètres sur le port série
+// Affiche tous les paramètres sur le port série (commande CONFIG)
 void Config_Print(void);
 
 #endif // CONFIG_H

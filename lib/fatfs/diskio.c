@@ -5,7 +5,6 @@
 #include "diskio.h"
 #include "ff.h"
 #include "sd_logger.h"
-#include "board_pins.h"
 #include "grove_rtc_ds1307.h"
 
 static DSTATUS status = STA_NOINIT;
@@ -70,17 +69,15 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff)
     }
 }
 
-// Date des fichiers : heure de la RTC si elle est installée, sinon 01/01/2026 00:00
+// Date des fichiers : heure de la RTC, ou 01/01/2026 00:00 si elle ne répond pas
 DWORD get_fattime(void)
 {
     RTC_DateTime dt = { .seconds = 0, .minutes = 0, .hours = 0, .day = 1, .month = 1, .year = 2026 };
 
-#if RTC_PRESENT
     if (!GroveRTC_GetDateTime(&dt)) {
         dt.seconds = 0; dt.minutes = 0; dt.hours = 0;
         dt.day = 1; dt.month = 1; dt.year = 2026;
     }
-#endif
 
     return ((DWORD)(dt.year - 1980) << 25) | ((DWORD)dt.month << 21) | ((DWORD)dt.day << 16) |
            ((DWORD)dt.hours << 11) | ((DWORD)dt.minutes << 5) | ((DWORD)dt.seconds >> 1);

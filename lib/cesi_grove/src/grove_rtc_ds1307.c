@@ -20,23 +20,6 @@ bool GroveRTC_Init(void)
     return HAL_I2C_IsDeviceReady(&GROVE_I2C_HANDLE, DS1307_ADDR, 3, 100) == HAL_OK;
 }
 
-bool GroveRTC_IsRunning(bool *running)
-{
-    uint8_t reg = 0x00;
-    uint8_t seconds = 0;
-
-    if (running == 0) return false;
-
-    if (HAL_I2C_Master_Transmit(&GROVE_I2C_HANDLE, DS1307_ADDR, &reg, 1, 100) != HAL_OK)
-        return false;
-
-    if (HAL_I2C_Master_Receive(&GROVE_I2C_HANDLE, DS1307_ADDR, &seconds, 1, 100) != HAL_OK)
-        return false;
-
-    *running = (seconds & 0x80) == 0; // CH = 1 : oscillateur arrêté
-    return true;
-}
-
 bool GroveRTC_GetDateTime(RTC_DateTime *dt)
 {
     if (dt == 0) return false;

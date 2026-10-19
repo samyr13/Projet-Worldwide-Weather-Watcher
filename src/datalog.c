@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LIST_MAX_ENTRIES 15  // Fichiers affichés au démarrage
 #define LINE_SIZE        160 // Une ligne CSV et son retour à la ligne
 
 static FATFS fs;
@@ -85,31 +84,6 @@ void DataLog_Init(void)
     disk_ioctl(0, GET_SECTOR_COUNT, &sectors);
     printf("[SD] Carte montee : %s, %lu Mo\r\n", fs_type_name(fs.fs_type),
            (unsigned long)(sectors / 2048UL));
-
-    // Contenu de la racine
-    DIR dir;
-    FILINFO fno;
-    unsigned count = 0;
-
-    if (f_opendir(&dir, "") != FR_OK) {
-        access_error("lecture du contenu", FR_DISK_ERR);
-        return;
-    }
-    while (f_readdir(&dir, &fno) == FR_OK && fno.fname[0] != '\0') {
-        if (count < LIST_MAX_ENTRIES) {
-            if (fno.fattrib & AM_DIR)
-                printf("[SD]   %-20s (dossier)\r\n", fno.fname);
-            else
-                printf("[SD]   %-20s %lu octets\r\n", fno.fname, (unsigned long)fno.fsize);
-        }
-        count++;
-    }
-    f_closedir(&dir);
-
-    if (count == 0)
-        printf("[SD] La carte est vide\r\n");
-    else if (count > LIST_MAX_ENTRIES)
-        printf("[SD]   ... et %u autres elements\r\n", count - LIST_MAX_ENTRIES);
 }
 
 // Nom du fichier : AAMMJJ_N.LOG (000000_N.LOG si l'heure est indisponible)

@@ -12,7 +12,7 @@
  *   l'écriture reprend au début d'un nouveau AAMMJJ_0.LOG.
  */
 
-// Monte la carte au démarrage et affiche son contenu
+// Monte la carte au démarrage
 void DataLog_Init(void);
 
 // Ajoute la mesure au fichier du jour (remonte la carte si elle a été retirée)
