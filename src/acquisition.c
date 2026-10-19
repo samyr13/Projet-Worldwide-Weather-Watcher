@@ -5,6 +5,7 @@
 #include "grove_light.h"
 #include "grove_rtc_ds1307.h"
 #include "grove_gps_air530z.h"
+#include "board_pins.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -121,8 +122,14 @@ void Acquisition_Start(bool with_gps)
 {
     memset(&current, 0, sizeof(current));
 
+#if RTC_PRESENT
     current.time_valid = GroveRTC_GetDateTime(&current.time);
     health.rtc_ok = current.time_valid;
+#else
+    // Horloge absente de la maquette : mesure sans heure, pas d'erreur RTC
+    current.time_valid = false;
+    health.rtc_ok = true;
+#endif
 
     env_done = !env_enabled();
     light_done = !g_config.lumin;

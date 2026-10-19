@@ -10,6 +10,7 @@
 #include "grove_rtc_ds1307.h"
 #include "grove_bme680.h"
 #include "grove_gps_air530z.h"
+#include "board_pins.h"
 
 // Modules applicatifs
 #include "modes.h"
@@ -18,6 +19,8 @@
 #include "config.h"
 #include "acquisition.h"
 #include "console.h"
+#include "datalog.h"
+#include "heap.h"
 
 // Mode maintenance : données consultables "en direct" sur le port série
 #define MAINTENANCE_PERIOD_MS 10000
@@ -100,6 +103,11 @@ static void rtc_check(void)
 {
     bool running = false;
 
+    if (!RTC_PRESENT) {
+        printf("[RTC] Horloge non installee (RTC_PRESENT = 0) : mesures sans heure\r\n");
+        return;
+    }
+
     if (!GroveRTC_IsRunning(&running)) {
         printf("[RTC] ERREUR : horloge injoignable sur I2C\r\n");
         return;
@@ -161,6 +169,11 @@ int main(void) {
                GroveBME680_StatusToString(GroveBME680_GetLastStatus()), GroveBME680_GetFoundChipId());
     }
 
+    DataLog_Init(); // Carte SD : montage et affichage de son contenu
+
+    printf("[MEM] Tas : %u octets utilises, %u octets disponibles avant la pile\r\n",
+           (unsigned)Heap_Used(), (unsigned)Heap_Available());
+
     printf("\r\n");
 
     SystemStatus status;
@@ -171,8 +184,8 @@ int main(void) {
         .gps_ok    = 1,
         .sensor_ok = 1,
         .data_ok   = 1,
-        .sd_space_ok = 1, // Carte SD pas encore intégrée : jamais signalée en erreur
-        .sd_ok       = 1
+        .sd_space_ok = 1,
+        .sd_ok       = DataLog_IsOk()
     };
 
     Measurement measure;
@@ -197,6 +210,8 @@ int main(void) {
             last_mode = mode_actuel;
             eco_measure_count = 0;
             measure_now = true;
+            if (mode_actuel == MODE_MAINTENANCE)
+                DataLog_Release(); // Carte SD libérée : retrait possible sans risque
             announce_mode(mode_actuel);
         }
 
@@ -229,7 +244,14 @@ int main(void) {
             if (!acq.sensor_ok) printf("  /!\\ Capteur en erreur : 2 mesures de suite sans reponse\r\n\r\n");
             if (!acq.data_ok)   printf("  /!\\ Valeur hors des seuils : verifier le capteur\r\n\r\n");
 
+            // Standard et économique : enregistrement sur la carte SD (pas en maintenance)
             if (mode_actuel == MODE_STANDARD || mode_actuel == MODE_ECONOMIQUE) {
+                DataLog_Write(&measure);
+                health.sd_ok       = DataLog_IsOk();
+                health.sd_space_ok = DataLog_HasSpace();
+                if (!health.sd_space_ok) printf("  /!\\ Carte SD pleine\r\n\r\n");
+                else if (!health.sd_ok)  printf("  /!\\ Carte SD : erreur d'acces ou d'ecriture\r\n\r\n");
+
                 printf("  Prochaine mesure dans %lu min\r\n\r\n",
                        (unsigned long)(acquisition_period_ms(mode_actuel) / 60000UL));
             }

@@ -9,13 +9,13 @@
 ## 📊 Où on en est
 
 ```
-Capteurs et matériel   ██████████  fini (sauf carte SD)
-LED d'état             ██████████  fini (sauf erreurs SD)
-Mode standard          ███████░░░  reste : écriture sur la carte SD
+Capteurs et matériel   ██████████  fini
+LED d'état             ██████████  fini
+Mode standard          ██████████  fini
 Mode configuration     ██████████  fini
-Mode maintenance       ████████░░  reste : retrait de la carte SD
+Mode maintenance       ██████████  fini
 Mode économique        ██████████  fini
-Carte SD               ░░░░░░░░░░  à faire
+Carte SD               █████████░  fini ; reste à tester la carte pleine et le retrait réel
 Livrables              ░░░░░░░░░░  à faire
 ```
 
@@ -24,12 +24,12 @@ Livrables              ░░░░░░░░░░  à faire
 ## 🔌 1. Le matériel
 
 - ✅ **Température, humidité, pression** : capteur BME280, sur un port **I2C**
-- ✅ **Horloge (RTC)** : sur un port **I2C**
+- ✅ **Horloge (RTC)** : sur un port **I2C**, à l'heure (vérifié : 1 s d'écart avec le PC)
 - ✅ **GPS** : sur le port **A0**
 - ✅ **Luminosité** : sur le port **A2**
 - ✅ **LED** : sur le port **D2**
 - ✅ **Boutons rouge et vert** : sur le port **D7**
-- ❌ **Carte SD** : ne répond pas, mise de côté pour l'instant
+- ✅ **Carte SD** : fonctionne (FAT32, 8 Go). Les mesures y sont enregistrées.
 
 ---
 
@@ -74,8 +74,8 @@ Démarrage avec le bouton rouge appuyé ──► 🟡 CONFIGURATION
 | 🔴🟡 rouge / jaune | le GPS ne répond pas | ✅ |
 | 🔴🟢 rouge / vert | un capteur ne répond pas | ✅ luminosité · 🧪 débrancher le BME280 pour tester |
 | 🔴🟢 rouge / vert *(vert 2× plus long)* | une valeur mesurée est anormale | ✅ |
-| 🔴⚪ rouge / blanc | la carte SD est pleine | ❌ en attente de la carte SD |
-| 🔴⚪ rouge / blanc *(blanc 2× plus long)* | erreur de la carte SD | ❌ en attente de la carte SD |
+| 🔴⚪ rouge / blanc | la carte SD est pleine | 🧪 codé, difficile à tester (il faudrait remplir la carte) |
+| 🔴⚪ rouge / blanc *(blanc 2× plus long)* | erreur de la carte SD | 🧪 retirer la carte en mode standard pour tester |
 
 ---
 
@@ -87,8 +87,8 @@ Démarrage avec le bouton rouge appuyé ──► 🟡 CONFIGURATION
 - ✅ Après **2 mesures** sans réponse, le capteur est signalé en erreur sur la LED
 - ✅ Luminosité classée **faible / moyenne / forte**
 - ✅ Valeur hors des seuils → LED « valeur anormale »
-- ❌ Enregistrer les mesures sur la **carte SD**, dans des fichiers `AAMMJJ_0.LOG`
-- ❌ Quand un fichier atteint **FILE_MAX_SIZE**, le copier en `_1`, `_2`… et recommencer en `_0`
+- ✅ Enregistrer les mesures sur la **carte SD**, dans des fichiers `AAMMJJ_0.LOG` (ex : `261014_0.LOG` ; `000000_0.LOG` si l'heure est indisponible), une ligne CSV par mesure
+- ✅ Quand un fichier atteint **FILE_MAX_SIZE**, il est archivé en `_1`, `_2`… et l'écriture recommence dans `_0`
 
 ---
 
@@ -121,7 +121,7 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 | Réglage | Rôle | Valeurs | Par défaut |
 |---|---|---|---|
 | `LOG_INTERVAL` | minutes entre 2 mesures | 1 à 1440 | 10 |
-| `FILE_MAX_SIZE` | taille max d'un fichier (octets) | 512 à 32768 | 2048 |
+| `FILE_MAX_SIZE` | taille max d'un fichier (octets) | 512 à 32768 | 2048 (4096 conseillé) |
 | `TIMEOUT` | secondes d'attente d'un capteur | 1 à 300 | 30 |
 | `LUMIN` | capteur de luminosité allumé | 0 ou 1 | 1 |
 | `LUMIN_LOW` | en dessous = luminosité faible | 0 à 1023 | 255 |
@@ -144,7 +144,7 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 
 - ✅ Les mesures s'affichent **en direct** sur le moniteur série (toutes les 10 s)
 - ✅ Plus rien n'est écrit sur la carte SD
-- ❌ Pouvoir retirer la carte SD sans risque (à faire avec la carte SD)
+- ✅ La carte SD est libérée à l'entrée en maintenance : elle peut être retirée et remise sans risque, puis elle est réutilisée automatiquement au retour en standard
 
 ---
 
@@ -155,12 +155,12 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 
 ---
 
-## 💾 8. Carte SD — ❌ à faire
+## 💾 8. Carte SD — ✅ fait
 
-- ❌ Faire répondre la carte (vérifier la carte, les fils et l'alimentation)
-- ❌ Écrire les fichiers de mesures
-- ❌ Changer de fichier quand il est plein
-- ❌ Détecter la carte pleine et les erreurs (LED rouge / blanc)
+- ✅ Faire répondre la carte : initialisation réussie sur la Nucleo actuelle
+- ✅ Écrire les fichiers de mesures (environ 0,3 s par mesure)
+- ✅ Changer de fichier quand il est plein (testé avec FILE_MAX_SIZE = 512)
+- 🧪 Détecter la carte pleine et les erreurs (LED rouge / blanc) : codé, à tester en retirant la carte en mode standard
 
 ---
 
@@ -177,9 +177,12 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 
 1. **Mode configuration** : démarrer avec le rouge appuyé, taper `VERSION`, puis `LOG_INTERVAL=1`, puis redémarrer la carte normalement → une mesure par minute.
 2. **Mode économique** : vert 5 s → la position GPS ne s'affiche qu'une mesure sur deux.
-3. **Panne de l'horloge** : débrancher la RTC → LED rouge / bleu.
+3. **Panne de l'horloge** : débrancher la RTC → LED rouge / bleu, fichier `000000_0.LOG`.
 4. **Panne d'un capteur** : débrancher le BME280, la lumière ou le GPS → « indisponible », puis LED d'erreur.
 5. **GPS** : le poser près d'une fenêtre → la position s'affiche après quelques minutes.
+6. **Carte SD** : la retirer, la mettre dans le PC et ouvrir le fichier du jour (ex : `261014_0.LOG`) → une ligne par mesure.
+7. **Retrait en maintenance** : rouge 5 s (orange), retirer puis remettre la carte, rouge 5 s → les mesures suivantes sont de nouveau enregistrées.
+8. **Carte retirée en standard** : retirer la carte → à la mesure suivante, LED rouge / blanc (blanc 2× plus long).
 
 > 💡 **Tester les pannes rapidement :** un capteur débranché est attendu **TIMEOUT** secondes (30 s par défaut) à chaque mesure, et l'erreur s'affiche après **2 mesures**, soit environ 1 min en maintenance. Pour une démonstration plus rapide, taper `TIMEOUT=5` en mode configuration : l'erreur s'affiche alors en environ 15 s. Remettre `TIMEOUT=30` (ou `RESET`) après.
 
@@ -193,3 +196,8 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 - **Maintenance « en direct »** : une mesure toutes les 10 s, pour voir les valeurs bouger.
 - **Commandes en plus** : `CONFIG` et `HELP`, qui affichent seulement les réglages et l'aide. Elles ne changent aucun comportement demandé par le PDF.
 - **Limites de LOG_INTERVAL, TIMEOUT et FILE_MAX_SIZE** : le PDF ne les donne pas ; nous avons fixé 1-1440 min, 1-300 s et 512-32768 octets pour refuser les valeurs absurdes.
+- **Fichiers CSV** : le PDF demande « une seule ligne horodatée » sans imposer de format. Les colonnes sont séparées par `;`, ce qui permet d'ouvrir le fichier dans Excel.
+- **Archivage d'un fichier plein** : le PDF demande une copie puis une reprise au début de `_0`. Renommer `_0` en `_N` puis créer un `_0` neuf donne le même résultat, plus vite.
+- **`000000_0.LOG` si l'heure est indisponible** : si la RTC ne répond pas, la date est inconnue. `000000` garde le format du PDF tout en montrant qu'il n'y a pas de date, et la mesure n'est pas perdue.
+- **Mémoire (prosit « Il faut changer la pile ! »)** : la pile mesurée dépassait la réservation du linker script (1 728 o pour 1 Ko). Les tampons de la carte SD ont été déplacés dans le tas (un seul `malloc` au démarrage, test de `NULL`), le tas est protégé contre la collision avec la pile, et le linker script a été ajusté d'après les mesures (2 Ko de pile, 2 Ko de tas). Détails dans la section 8 du README.
+- **Nombre de fichiers LOG** : 2 Ko par défaut comme le PDF, soit environ 1 500 fichiers et 9 Mo par an (la carte de 8 Go ne sera jamais pleine). La carte range les fichiers par blocs de 4 Ko, donc un fichier de 2 Ko gaspille la moitié de son bloc : nous conseillons `FILE_MAX_SIZE=4096`, qui divise le nombre de fichiers par 2 sans espace perdu.

@@ -25,6 +25,13 @@ SDLoggerCardType SDLogger_GetCardType(void);
 SDLoggerInitStatus SDLogger_GetLastInitStatus(void);
 const char *SDLogger_GetActiveCsLabel(void);
 bool SDLogger_BitBangCMD0Test(void);
-bool SDLogger_WriteLine(const char *filename, const char *line);
+
+// Accès par secteurs de 512 octets (utilisé par FatFs, voir lib/fatfs/diskio.c)
+#include <stdint.h>
+bool SDLogger_IsReady(void);
+bool SDLogger_ReadBlocks(uint8_t *buf, uint32_t sector, uint32_t count);
+bool SDLogger_WriteBlocks(const uint8_t *buf, uint32_t sector, uint32_t count);
+bool SDLogger_GetSectorCount(uint32_t *count);
+bool SDLogger_Sync(void);
 
 #endif

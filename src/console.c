@@ -5,6 +5,7 @@
 #include "buttons.h"
 #include "grove_rtc_ds1307.h"
 #include "grove_gps_air530z.h"
+#include "board_pins.h"
 #include "stm32l4xx_hal.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -63,6 +64,11 @@ static unsigned days_in_month(unsigned month, unsigned year)
 static bool rtc_update(const RTC_DateTime *changes, bool time, bool date, bool day)
 {
     RTC_DateTime dt;
+
+    if (!RTC_PRESENT) {
+        printf("ERREUR : horloge RTC non installee sur la maquette (RTC_PRESENT = 0)\r\n");
+        return false;
+    }
 
     if (!GroveRTC_GetDateTime(&dt)) {
         printf("ERREUR : horloge RTC injoignable\r\n");

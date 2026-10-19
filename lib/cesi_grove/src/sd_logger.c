@@ -3,12 +3,29 @@
 #include "stm32l4xx_hal.h"
 #include <stdio.h>
 
+// Messages de diagnostic de l'initialisation (compiler avec -DSD_DEBUG pour les voir)
+#ifdef SD_DEBUG
+#define SD_DIAG_PRINTF printf
+#else
+#define SD_DIAG_PRINTF(...) ((void)0)
+#endif
+
 #define SD_CMD0     0
 #define SD_CMD1     1
 #define SD_CMD8     8
+#define SD_CMD9     9   // SEND_CSD : registre décrivant la capacité
+#define SD_CMD16    16  // SET_BLOCKLEN : blocs de 512 octets (cartes SDSC)
+#define SD_CMD17    17  // READ_SINGLE_BLOCK
+#define SD_CMD24    24  // WRITE_BLOCK
 #define SD_CMD55    55
 #define SD_CMD58    58
 #define SD_ACMD41   41
+
+#define SD_BLOCK_SIZE        512U
+#define SD_TOKEN_START_BLOCK 0xFEU
+#define SD_DATA_ACCEPTED     0x05U
+#define SD_DATA_TIMEOUT_MS   200U
+#define SD_BUSY_TIMEOUT_MS   500U
 
 #define SD_R1_IDLE_STATE      0x01U
 #define SD_R1_ILLEGAL_COMMAND 0x04U
@@ -125,6 +142,31 @@ static uint8_t SD_SendCommand(uint8_t cmd, uint32_t arg, uint8_t crc)
     return response;
 }
 
+// Vitesse du SPI : lente pendant l'initialisation (exigée par la norme SD), rapide ensuite
+static void SD_SetSpeed(uint32_t prescaler)
+{
+    __HAL_SPI_DISABLE(&SD_SPI_HANDLE);
+    MODIFY_REG(SD_SPI_HANDLE.Instance->CR1, SPI_CR1_BR, prescaler);
+    SD_SPI_HANDLE.Init.BaudRatePrescaler = prescaler;
+    __HAL_SPI_ENABLE(&SD_SPI_HANDLE);
+}
+
+// Fin d'initialisation réussie : blocs de 512 octets et SPI rapide (4 MHz / 4 = 1 MHz)
+static bool SD_FinishInit(void)
+{
+    if (g_card_type == SDLOGGER_CARD_SDSC)
+    {
+        uint8_t r1 = SD_SendCommand(SD_CMD16, SD_BLOCK_SIZE, 0x01U);
+        SD_Deselect();
+        if (r1 != 0x00U)
+            return false;
+    }
+
+    SD_SetSpeed(SPI_BAUDRATEPRESCALER_4);
+    g_init_status = SDLOGGER_INIT_OK;
+    return true;
+}
+
 bool SDLogger_Init(void)
 {
     uint8_t cs_index;
@@ -134,19 +176,20 @@ bool SDLogger_Init(void)
     uint8_t ocr[4];
     uint32_t start;
     uint8_t cmd0_try;
-    uint8_t idle_samples[8];
-    uint8_t cmd0_samples[8];
+    uint8_t idle_samples[8] __attribute__((unused));  // Affichés seulement avec SD_DEBUG
+    uint8_t cmd0_samples[8] __attribute__((unused));
     uint8_t sample_count;
 
     g_card_type = SDLOGGER_CARD_UNKNOWN;
     g_init_status = SDLOGGER_INIT_ERR_CMD0;
+    SD_SetSpeed(SPI_BAUDRATEPRESCALER_256); // 4 MHz / 256 = 15,6 kHz (< 400 kHz)
 
     for (cs_index = 0; cs_index < SD_CS_CANDIDATE_COUNT; ++cs_index)
     {
         SD_SetActiveChipSelect(cs_index);
         SD_Deselect();
 
-        printf("[SD diag] try CS %s\r\n", g_cs_candidates[cs_index].label);
+        SD_DIAG_PRINTF("[SD diag] try CS %s\r\n", g_cs_candidates[cs_index].label);
 
         HAL_Delay(SD_POWERUP_DELAY_MS);
 
@@ -160,7 +203,7 @@ bool SDLogger_Init(void)
         {
             idle_samples[i] = SD_SPI_Transfer(0xFF);
         }
-        printf("[SD diag] MISO idle bytes: %02X %02X %02X %02X %02X %02X %02X %02X\r\n",
+        SD_DIAG_PRINTF("[SD diag] MISO idle bytes: %02X %02X %02X %02X %02X %02X %02X %02X\r\n",
                idle_samples[0], idle_samples[1], idle_samples[2], idle_samples[3],
                idle_samples[4], idle_samples[5], idle_samples[6], idle_samples[7]);
 
@@ -187,18 +230,18 @@ bool SDLogger_Init(void)
 
         if (sample_count > 0U)
         {
-            printf("[SD diag] CMD0 R1 first bytes:");
+            SD_DIAG_PRINTF("[SD diag] CMD0 R1 first bytes:");
             for (i = 0; i < sample_count; ++i)
             {
-                printf(" %02X", cmd0_samples[i]);
+                SD_DIAG_PRINTF(" %02X", cmd0_samples[i]);
             }
-            printf("\r\n");
+            SD_DIAG_PRINTF("\r\n");
         }
 
         if (r1 != SD_R1_IDLE_STATE)
         {
             g_init_status = SDLOGGER_INIT_ERR_CMD0;
-            printf("[SD diag] CMD0 failed on %s\r\n", g_cs_candidates[cs_index].label);
+            SD_DIAG_PRINTF("[SD diag] CMD0 failed on %s\r\n", g_cs_candidates[cs_index].label);
             continue;
         }
 
@@ -258,8 +301,7 @@ bool SDLogger_Init(void)
             SD_Deselect();
 
             g_card_type = ((ocr[0] & 0x40U) != 0U) ? SDLOGGER_CARD_SDHC : SDLOGGER_CARD_SDSC;
-            g_init_status = SDLOGGER_INIT_OK;
-            return true;
+            return SD_FinishInit();
         }
 
         if ((r1 & SD_R1_ILLEGAL_COMMAND) == 0U)
@@ -279,8 +321,7 @@ bool SDLogger_Init(void)
             if (r1 == 0x00U)
             {
                 g_card_type = SDLOGGER_CARD_SDSC;
-                g_init_status = SDLOGGER_INIT_OK;
-                return true;
+                return SD_FinishInit();
             }
         }
         while ((HAL_GetTick() - start) < SD_INIT_TIMEOUT_MS);
@@ -446,11 +487,130 @@ bool SDLogger_BitBangCMD0Test(void)
     return false;
 }
 
-bool SDLogger_WriteLine(const char *filename, const char *line)
-{
-    (void)filename;
-    (void)line;
+/* ---------- Accès par secteurs de 512 octets (utilisé par FatFs) ---------- */
 
-    /* File write support needs FatFs + diskio SPI. */
-    return false;
+// Attend le jeton de début de données puis lit len octets (+ 2 octets de CRC ignorés)
+static bool SD_ReceiveData(uint8_t *buf, uint16_t len)
+{
+    uint8_t token;
+    uint32_t start = HAL_GetTick();
+
+    do
+    {
+        token = SD_SPI_Transfer(0xFF);
+    }
+    while (token == 0xFF && (HAL_GetTick() - start) < SD_DATA_TIMEOUT_MS);
+
+    if (token != SD_TOKEN_START_BLOCK)
+        return false;
+
+    for (uint16_t i = 0; i < len; ++i)
+        buf[i] = SD_SPI_Transfer(0xFF);
+
+    (void)SD_SPI_Transfer(0xFF);
+    (void)SD_SPI_Transfer(0xFF);
+    return true;
+}
+
+// Envoie un bloc de 512 octets puis attend la fin de l'écriture par la carte
+static bool SD_SendData(const uint8_t *buf)
+{
+    if (!SD_WaitReady(SD_BUSY_TIMEOUT_MS))
+        return false;
+
+    (void)SD_SPI_Transfer(SD_TOKEN_START_BLOCK);
+    for (uint16_t i = 0; i < SD_BLOCK_SIZE; ++i)
+        (void)SD_SPI_Transfer(buf[i]);
+    (void)SD_SPI_Transfer(0xFF);
+    (void)SD_SPI_Transfer(0xFF);
+
+    if ((SD_SPI_Transfer(0xFF) & 0x1FU) != SD_DATA_ACCEPTED)
+        return false;
+
+    return SD_WaitReady(SD_BUSY_TIMEOUT_MS);
+}
+
+// Cartes SDSC : adresse en octets ; SDHC/SDXC : adresse en secteurs
+static uint32_t SD_Address(uint32_t sector)
+{
+    return (g_card_type == SDLOGGER_CARD_SDHC) ? sector : sector * SD_BLOCK_SIZE;
+}
+
+bool SDLogger_ReadBlocks(uint8_t *buf, uint32_t sector, uint32_t count)
+{
+    if (g_init_status != SDLOGGER_INIT_OK)
+        return false;
+
+    for (uint32_t n = 0; n < count; ++n)
+    {
+        bool ok = SD_SendCommand(SD_CMD17, SD_Address(sector + n), 0x01U) == 0x00U &&
+                  SD_ReceiveData(buf + n * SD_BLOCK_SIZE, SD_BLOCK_SIZE);
+        SD_Deselect();
+        if (!ok)
+            return false;
+    }
+    return true;
+}
+
+bool SDLogger_WriteBlocks(const uint8_t *buf, uint32_t sector, uint32_t count)
+{
+    if (g_init_status != SDLOGGER_INIT_OK)
+        return false;
+
+    for (uint32_t n = 0; n < count; ++n)
+    {
+        bool ok = SD_SendCommand(SD_CMD24, SD_Address(sector + n), 0x01U) == 0x00U &&
+                  SD_SendData(buf + n * SD_BLOCK_SIZE);
+        SD_Deselect();
+        if (!ok)
+            return false;
+    }
+    return true;
+}
+
+// Nombre de secteurs de 512 octets, calculé à partir du registre CSD de la carte
+bool SDLogger_GetSectorCount(uint32_t *count)
+{
+    uint8_t csd[16];
+
+    if (g_init_status != SDLOGGER_INIT_OK || count == 0)
+        return false;
+
+    bool ok = SD_SendCommand(SD_CMD9, 0, 0x01U) == 0x00U && SD_ReceiveData(csd, sizeof(csd));
+    SD_Deselect();
+    if (!ok)
+        return false;
+
+    if ((csd[0] >> 6) == 1U)
+    {
+        // CSD version 2 (SDHC/SDXC) : capacité = (C_SIZE + 1) x 512 Ko
+        uint32_t c_size = ((uint32_t)(csd[7] & 0x3FU) << 16) | ((uint32_t)csd[8] << 8) | csd[9];
+        *count = (c_size + 1U) * 1024U;
+    }
+    else
+    {
+        // CSD version 1 (SDSC)
+        uint32_t read_bl_len = csd[5] & 0x0FU;
+        uint32_t c_size = ((uint32_t)(csd[6] & 0x03U) << 10) | ((uint32_t)csd[7] << 2) | (csd[8] >> 6);
+        uint32_t c_size_mult = ((csd[9] & 0x03U) << 1) | (csd[10] >> 7);
+        *count = (c_size + 1U) << (c_size_mult + 2U + read_bl_len - 9U);
+    }
+    return true;
+}
+
+// Attend que la carte ait fini toute écriture en cours
+bool SDLogger_Sync(void)
+{
+    if (g_init_status != SDLOGGER_INIT_OK)
+        return false;
+
+    SD_Select();
+    bool ok = SD_WaitReady(SD_BUSY_TIMEOUT_MS);
+    SD_Deselect();
+    return ok;
+}
+
+bool SDLogger_IsReady(void)
+{
+    return g_init_status == SDLOGGER_INIT_OK;
 }

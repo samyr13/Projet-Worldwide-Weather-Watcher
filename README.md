@@ -19,8 +19,9 @@ une LED. Deux boutons permettent de passer d'un mode de fonctionnement à l'autr
 5. [Organisation du code](#5-organisation-du-code)
 6. [Le déroulement du programme](#6-le-déroulement-du-programme)
 7. [Fichier par fichier : rôle et fonctions](#7-fichier-par-fichier--rôle-et-fonctions)
-8. [Choix techniques](#8-choix-techniques)
-9. [État du projet](#9-état-du-projet)
+8. [Mémoire : pile et tas](#8-mémoire--pile-et-tas)
+9. [Choix techniques](#9-choix-techniques)
+10. [État du projet](#10-état-du-projet)
 
 ---
 
@@ -36,7 +37,7 @@ Carte **STM32 Nucleo-L476RG** (microcontrôleur ARM Cortex-M4) avec un shield Gr
 | Capteur de **luminosité** | A2 | PA4 | entrée analogique (ADC) |
 | **LED** RGB P9813 | D2 | PB3 (données), PA10 (horloge) | 2 fils |
 | **Boutons** rouge et vert | D7 | PA8 (rouge), PA9 (vert) | entrées numériques |
-| Lecteur de **carte SD** | SPI | PA5, PA6, PA7, CS sur PB5 | SPI (pas encore fonctionnel) |
+| Lecteur de **carte SD** | SPI | PA5 (SCK), PA6 (MISO), PA7 (MOSI), CS sur PB5 | SPI, carte FAT32 ou exFAT |
 | **Moniteur série** (PC) | câble USB | PA2, PA3 | USART2, 115200 bauds |
 
 Toutes les broches sont définies à un seul endroit : [include/board_pins.h](include/board_pins.h).
@@ -61,16 +62,23 @@ Au démarrage, le moniteur série affiche :
 [CONFIG] Parametres charges depuis la memoire (EEPROM)
 [BOOT] Demarrage nominal -> MODE STANDARD
 [I2C] Scan du bus : 0x68 0x76
-[RTC] 2026-10-13 14:30:00
+[RTC] 2026-10-14 11:09:33
 [GPS] Ecoute sur UART4 (port A0, 9600 bauds)
 [CAPTEUR] BME280 detecte en 0x76, calibration chargee
+[SD] Carte montee : FAT32, 7544 Mo
+[SD]   261014_0.LOG         148 octets
+[MEM] Tas : 1204 octets utilises, 92268 octets disponibles avant la pile
 
------ Mesure du 13/10/2026 a 14:30:01 -----
+----- Mesure du 14/10/2026 a 11:09:34 -----
   Temperature : 24.1 C
   Humidite    : 52.0 %
   Pression    : 994.5 hPa
   Luminosite  : 412 / 1023 (moyenne)
-  Position    : 43.296482 N, 5.369780 E (7 satellites)
+  Position    : recherche des satellites... (0 en vue)
+
+  -> enregistre dans 261014_0.LOG
+
+  Prochaine mesure dans 10 min
 ```
 
 ---
@@ -79,10 +87,10 @@ Au démarrage, le moniteur série affiche :
 
 | Mode | LED | Comment y entrer | Ce qu'il fait |
 |---|---|---|---|
-| **Standard** | 🟢 vert | démarrage normal | une mesure toutes les **LOG_INTERVAL** minutes (10 par défaut) |
+| **Standard** | 🟢 vert | démarrage normal | une mesure toutes les **LOG_INTERVAL** minutes (10 par défaut), enregistrée sur la carte SD |
 | **Configuration** | 🟡 jaune | démarrer en maintenant le **bouton rouge** | mesures arrêtées, réglages par commandes série |
 | **Économique** | 🔵 bleu | **vert 5 s** depuis le standard | mesures 2 fois moins souvent, GPS lu une mesure sur deux |
-| **Maintenance** | 🟠 orange | **rouge 5 s** depuis le standard ou l'économique | mesures en direct toutes les 10 s, carte SD non utilisée |
+| **Maintenance** | 🟠 orange | **rouge 5 s** depuis le standard ou l'économique | mesures en direct toutes les 10 s ; carte SD libérée, elle peut être retirée sans risque |
 
 ```
 🟢 STANDARD   ──vert 5 s──►  🔵 ÉCONOMIQUE ──vert 5 s──►  🟢 STANDARD
@@ -142,10 +150,15 @@ Le code est découpé en **3 couches**. Chaque couche n'utilise que celle du des
 │  MODULES DE L'APPLICATION                                    src/    │
 │  buttons.c        boutons et changements de mode                     │
 │  acquisition.c    mesure de tous les capteurs, timeouts, alertes     │
+│  datalog.c        enregistrement des mesures sur la carte SD         │
 │  console.c        commandes du mode configuration                    │
 │  config.c         réglages et sauvegarde en mémoire flash            │
 │  system_status.c  couleur et clignotement de la LED                  │
 │  setup.c          initialisation de la carte (horloge, I2C, SPI…)    │
+│  heap.c           tas protégé contre la collision avec la pile       │
+├──────────────────────────────────────────────────────────────────────┤
+│  SYSTÈME DE FICHIERS                                 lib/fatfs/      │
+│  FatFs (fichiers FAT32 / exFAT) + diskio.c (lien avec sd_logger.c)   │
 ├──────────────────────────────────────────────────────────────────────┤
 │  DRIVERS DES COMPOSANTS                         lib/cesi_grove/      │
 │  grove_bme680.c   grove_rtc_ds1307.c   grove_gps_air530z.c           │
@@ -164,7 +177,9 @@ Le code est découpé en **3 couches**. Chaque couche n'utilise que celle du des
 │   └── version.h         version et numéro de lot
 ├── src/                  modules de l'application (.c)
 ├── lib/cesi_grove/       drivers des composants Grove
+├── lib/fatfs/            système de fichiers FatFs R0.12c + diskio.c
 ├── platformio.ini        configuration de compilation
+├── STM32L476RGTX_FLASH.ld  linker script (tailles de la pile et du tas)
 ├── CHECKLIST.md          avancement par rapport au cahier des charges
 └── README.md             ce document
 ```
@@ -179,8 +194,9 @@ Le code est découpé en **3 couches**. Chaque couche n'utilise que celle du des
 2. `Console_Init()`, `GroveRGB_Init()` et `GroveLight_Init()` préparent la console, la LED et le capteur de lumière.
 3. `Config_Load()` relit les réglages enregistrés, ou prend les valeurs par défaut.
 4. `check_boot_mode()` choisit le mode **configuration** si le bouton rouge est appuyé, sinon **standard**.
-5. Le bus I2C est scanné, puis `rtc_check()` vérifie l'horloge. Si elle est arrêtée, elle est mise à l'heure de la compilation.
+5. Le bus I2C est scanné, puis `rtc_check()` vérifie l'horloge si elle est installée (`RTC_PRESENT`). Si elle est arrêtée, elle est mise à l'heure de la compilation.
 6. `GroveGPS_Init()` et `GroveBME680_Init()` démarrent le GPS et le capteur BME280.
+7. `DataLog_Init()` monte la carte SD et affiche son contenu.
 
 ### La boucle principale
 
@@ -201,6 +217,7 @@ while (1) {
          configuration : jamais
 
    D. Acquisition_Poll()         la mesure est finie ? -> affichage + mise à jour des alertes
+      DataLog_Write()            standard et économique : ajoute la mesure au fichier de la carte SD
 
    E. SystemStatus_Update()      couleur ou clignotement de la LED
 }
@@ -210,7 +227,7 @@ while (1) {
 
 ```
 Acquisition_Start()
-   ├─ lit l'heure sur la RTC (en cas d'échec : alerte RTC)
+   ├─ lit l'heure sur la RTC si elle est installée (en cas d'échec : alerte RTC)
    └─ prépare la lecture des capteurs
 
 Acquisition_Poll(), à chaque tour de boucle :
@@ -264,10 +281,34 @@ Chaque bouton a 3 états : *relâché*, *appui en cours* et *action faite*. L'é
 | `Acquisition_IsRunning()` | indique si une mesure est en cours |
 | `Acquisition_GetHealth()` | état des capteurs : RTC, GPS, capteurs, données cohérentes |
 | `Acquisition_Print()` | affiche la mesure de façon lisible sur le moniteur série |
-| `Acquisition_FormatLine()` | écrit la mesure sur une ligne `date;temp;hum;pres;lum;niveau;lat;lon`, le format prévu pour la carte SD |
+| `Acquisition_FormatLine()` | écrit la mesure sur une ligne CSV `date;temp;hum;pres;lum;niveau;lat;lon`, enregistrée sur la carte SD |
 | `read_env()` / `read_light()` / `read_gps()` | lecture de chaque capteur (fonctions internes) |
 | `update_timeouts()` | compte les mesures consécutives sans réponse d'un capteur |
 | `data_coherent()` | vérifie la température et la pression par rapport aux seuils |
+
+#### [src/datalog.c](src/datalog.c) — enregistrement sur la carte SD
+
+Chaque mesure est ajoutée sur une ligne au format CSV (séparateur `;`), dans le fichier `AAMMJJ_0.LOG` du jour (`000000_0.LOG` si l'heure est indisponible : horloge en panne ou désactivée). Une ligne d'en-tête est écrite au début de chaque fichier :
+
+```
+DATE HEURE;TEMP_AIR(C);HYGR(%);PRESSURE(hPa);LUMIN(0-1023);LUMIN_NIVEAU;LATITUDE;LONGITUDE
+NA;23.8;56.9;1003.9;514;MOYENNE;NA;NA
+```
+
+Quand l'ajout d'une ligne ferait dépasser **FILE_MAX_SIZE**, le fichier est archivé sous le premier numéro libre (`AAMMJJ_1.LOG`, `_2`…) et l'écriture reprend dans un `AAMMJJ_0.LOG` vide.
+
+| Fonction | Rôle |
+|---|---|
+| `DataLog_Init()` | monte la carte au démarrage, affiche son type, sa taille et son contenu |
+| `DataLog_Write(&mesure)` | ajoute la mesure au fichier ; archive le fichier s'il est plein ; remonte la carte si elle a été retirée puis remise |
+| `DataLog_Release()` | libère la carte à l'entrée en maintenance, pour pouvoir la retirer sans risque |
+| `DataLog_IsOk()` / `DataLog_HasSpace()` | état de la carte pour la LED : erreur d'accès ou carte pleine |
+| `file_name()` / `archive()` | nom `AAMMJJ_N.LOG` et archivage d'un fichier plein (fonctions internes) |
+
+#### [lib/fatfs/](lib/fatfs/) — système de fichiers
+
+**FatFs** (version R0.12c, fournie avec STM32Cube) gère les fichiers et les dossiers sur une carte FAT32 ou exFAT. Le formatage est désactivé : le programme ne peut jamais effacer la carte.
+[diskio.c](lib/fatfs/diskio.c) fait le lien entre FatFs et le driver `sd_logger.c` : lecture et écriture de secteurs, capacité, date des fichiers (prise sur la RTC si elle est installée).
 
 #### [src/console.c](src/console.c) — commandes du mode configuration
 
@@ -304,6 +345,13 @@ Tous les réglages sont décrits dans un tableau `params[]` : nom, emplacement e
 | `get_error()` | choisit l'erreur à afficher, sa couleur et la durée de chaque couleur |
 | `set_color()` | n'envoie une couleur à la LED que si elle a changé |
 
+#### [src/heap.c](src/heap.c) — tas protégé
+
+| Fonction | Rôle |
+|---|---|
+| `_sbrk()` | appelée par `malloc()` pour agrandir le tas ; refuse d'entrer dans la zone réservée à la pile |
+| `Heap_Used()` / `Heap_Available()` | octets du tas utilisés et encore disponibles (affichés au démarrage) |
+
 #### [src/setup.c](src/setup.c) — initialisation de la carte
 
 | Fonction | Rôle |
@@ -323,7 +371,7 @@ Tous les réglages sont décrits dans un tableau `params[]` : nom, emplacement e
 | [grove_gps_air530z.c](lib/cesi_grove/src/grove_gps_air530z.c) | GPS | `GroveGPS_Init()` démarre la réception par interruption · `GroveGPS_Process()` vérifie et décode les trames de position (GGA) · `GroveGPS_GetLast()` renvoie la dernière position |
 | [grove_light.c](lib/cesi_grove/src/grove_light.c) | luminosité | `GroveLight_ReadRaw()` lecture 0-4095 · `GroveLight_IsConnected()` détecte un capteur débranché |
 | [grove_rgb.c](lib/cesi_grove/src/grove_rgb.c) | LED RGB | `GroveRGB_SetColor(r, g, b)` · `GroveRGB_Off()` |
-| [sd_logger.c](lib/cesi_grove/src/sd_logger.c) | carte SD | `SDLogger_Init()` démarre la carte en SPI · `SDLogger_BitBangCMD0Test()` diagnostic du câblage · l'écriture de fichiers reste à faire |
+| [sd_logger.c](lib/cesi_grove/src/sd_logger.c) | carte SD (SPI) | `SDLogger_Init()` démarre la carte · `SDLogger_ReadBlocks()` / `SDLogger_WriteBlocks()` lisent et écrivent des secteurs de 512 octets · `SDLogger_GetSectorCount()` capacité de la carte · `SDLogger_BitBangCMD0Test()` diagnostic du câblage |
 
 ### Fichiers d'en-tête utiles
 
@@ -338,7 +386,46 @@ Tous les réglages sont décrits dans un tableau `params[]` : nom, emplacement e
 
 ---
 
-## 8. Choix techniques
+## 8. Mémoire : pile et tas
+
+Le STM32L476RG a **96 Ko de RAM**. Elle est partagée entre trois zones :
+
+```
+0x20000000 ┌──────────────────────────────┐
+           │ variables globales/statiques │  .data + .bss : 2,7 Ko
+           ├──────────────────────────────┤  <- end
+           │ TAS (malloc), grandit ↓      │  1,2 Ko utilisés
+           │                              │
+           │        RAM libre             │  ~ 90 Ko
+           │                              │
+           │ PILE, grandit ↑              │  1,1 Ko utilisés au maximum
+0x20018000 └──────────────────────────────┘  <- _estack
+```
+
+### Mesures réalisées sur la maquette
+
+| Mesure | Avant optimisation | Après |
+|---|---|---|
+| Variables globales et statiques (`.data` + `.bss`) | 2,7 Ko | 2,7 Ko |
+| Pile utilisée au maximum (remplissage de la RAM avec un motif, puis lecture au débogueur) | **1 728 o** | **1 088 o** |
+| Tas utilisé (affiché au démarrage : `[MEM] Tas : ...`) | 0 o | 1 204 o |
+| Pile réservée par le linker script | 1 Ko (dépassée) | 2 Ko |
+| Tas réservé par le linker script | 512 o | 2 Ko |
+
+### Ce qui a été fait
+
+1. **Les gros tampons ont quitté la pile.** Le fichier ouvert sur la carte SD (`FIL`, environ 600 octets) et la ligne CSV (160 octets) étaient déclarés dans `DataLog_Write()`, donc sur la pile. Ils sont maintenant alloués dans le **tas**.
+2. **Un seul `malloc`, au démarrage** (`DataLog_Init()`), jamais dans la boucle principale. Des `malloc` / `free` répétés **fragmenteraient le tas**.
+3. **Test de `NULL` après chaque `malloc`.** En cas d'échec, l'enregistrement SD est désactivé proprement avec un message, au lieu d'écrire à une adresse invalide.
+4. **Pas de `free`** pour ces tampons : ils servent pendant toute la vie du programme, qui ne se termine jamais.
+5. **Tas protégé contre la collision avec la pile** ([src/heap.c](src/heap.c)). La fonction `_sbrk()`, appelée par `malloc()`, refuse de faire grandir le tas dans la zone réservée à la pile : `malloc()` renvoie alors `NULL` au lieu d'écraser la pile.
+6. **Linker script ajusté d'après les mesures** ([STM32L476RGTX_FLASH.ld](STM32L476RGTX_FLASH.ld)) : 2 Ko pour la pile et 2 Ko pour le tas. Si le programme dépassait un jour la RAM disponible, l'éditeur de liens refuserait de le compiler.
+
+Les petites variables (indices, valeurs lues, structures de quelques octets) restent sur la pile. Les gros tableaux sont passés **par adresse** (pointeur) aux fonctions, et les petites valeurs **par valeur**.
+
+---
+
+## 9. Choix techniques
 
 | Choix | Pourquoi |
 |---|---|
@@ -348,20 +435,25 @@ Tous les réglages sont décrits dans un tableau `params[]` : nom, emplacement e
 | **Réglages en mémoire flash** | la carte n'a pas d'EEPROM ; un code de reconnaissance et une somme de contrôle protègent les données |
 | **Vert pour sortir de l'économique** | le PDF donne deux rôles au bouton rouge en économique ; chaque bouton garde ainsi un seul rôle |
 | **Maintenance toutes les 10 s** | le PDF demande un affichage « en direct » sans préciser le rythme |
+| **Fichiers de la carte SD au format CSV** (séparateur `;`) | le PDF demande « une seule ligne horodatée » sans imposer de format ; le CSV s'ouvre directement dans Excel (en renommant `.LOG` en `.csv`) |
+| **Archivage par renommage** | le PDF demande une copie du fichier plein puis une reprise au début de `_0` : renommer `_0` en `_N` puis créer un `_0` neuf donne exactement le même résultat, plus rapidement |
+| **`000000_0.LOG` si l'heure est indisponible** | si la RTC ne répond pas, la date est inconnue : `000000` garde le format `AAMMJJ` du PDF tout en indiquant clairement l'absence de date, et aucune mesure n'est perdue |
+| **FILE_MAX_SIZE : 2 Ko par défaut, 4096 conseillé** | le PDF fixe 2 Ko par défaut, valeur conservée. Mais la carte range les fichiers par blocs de 4 Ko : un fichier de 2 Ko laisse la moitié de son bloc vide. Avec `FILE_MAX_SIZE=4096` (l'exemple du PDF), il y a **2 fois moins de fichiers** et plus aucun espace perdu. À 10 min par mesure : environ 1 500 fichiers et 9 Mo par an avec 2 Ko, environ 750 fichiers avec 4 Ko |
 | **Commandes `CONFIG` et `HELP`** | ajoutées pour l'ergonomie ; elles affichent seulement des informations et ne changent aucun comportement demandé |
 | **Limites de LOG_INTERVAL, TIMEOUT et FILE_MAX_SIZE** | non données par le PDF : 1-1440 min, 1-300 s et 512-32768 octets, pour refuser les valeurs absurdes |
 
 ---
 
-## 9. État du projet
+## 10. État du projet
 
 | Partie | État |
 |---|---|
-| Capteurs (BME280, RTC, GPS, luminosité) | ✅ fonctionnels, pannes détectées |
+| Capteurs (BME280, GPS, luminosité) | ✅ fonctionnels, pannes détectées |
+| Horloge RTC | ✅ branchée et à l'heure : mesures et noms de fichiers datés |
 | LED (modes et codes d'erreur) | ✅ |
 | Les 4 modes et les boutons | ✅ |
 | Mode configuration et sauvegarde des réglages | ✅ |
-| **Carte SD** (fichiers `AAMMJJ_0.LOG`, rotation, carte pleine) | ❌ à faire : la carte ne répond pas encore (câblage à vérifier) |
+| **Carte SD** (fichiers `AAMMJJ_0.LOG`, archivage, maintenance) | ✅ écriture, archivage et libération en maintenance testés ; carte pleine codée mais non testée |
 | Livrables (diagrammes, documentation, guide utilisateur) | ❌ à faire |
 
 ---

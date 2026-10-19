@@ -48,10 +48,17 @@
 #define GPS_GPIO_PINS     (GPIO_PIN_0 | GPIO_PIN_1)
 
 /*
- * Grove RTC v1.2 DS1307 + BME680
+ * Grove RTC v1.2 DS1307 + BME280
  * Tous deux sur I2C.
  */
 #define GROVE_I2C_HANDLE hi2c1
+
+/*
+ * Horloge RTC présente sur la maquette ?
+ * 0 : pas encore branchée -> mesures sans heure, pas d'erreur RTC sur la LED
+ * 1 : branchée -> horodatage des mesures et erreur rouge / bleu si elle ne répond pas
+ */
+#define RTC_PRESENT 1
 
 /*
  * SD Card Shield Seeed v4.3
