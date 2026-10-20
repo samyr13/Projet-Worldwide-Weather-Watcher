@@ -53,10 +53,11 @@ Démarrage avec le bouton rouge appuyé ──► 🟡 CONFIGURATION
 - ✅ Vert 5 s en standard → mode **économique**
 - 🧪 Vert 5 s en économique → retour en **standard**
 - ✅ Rouge 5 s en standard → mode **maintenance**
-- 🧪 Rouge 5 s en économique → mode **maintenance**
+- ✅ Rouge 5 s en économique → mode **maintenance**
 - ✅ Rouge 5 s en maintenance → retour au **mode d'avant** (standard ou économique)
 - ✅ Configuration → retour en standard après **30 min sans activité** (le délai repart à chaque commande ou appui)
 - 🧪 Ce retour automatique après 30 min n'a pas encore été testé en vrai (trop long à attendre)
+- ✅ Appuis détectés **par interruption** (prosit 6) : testé le 20/10 sur la maquette (appui de 5 s, appui trop court avec sa durée exacte, un seul message par appui)
 
 > ⚠️ **À expliquer dans le rapport :** le PDF demande deux choses pour le même geste en mode économique (rouge 5 s) : aller en maintenance, et revenir en standard. Nous avons gardé le rouge pour la maintenance, comme dans les autres modes, et utilisé le **vert** pour revenir en standard. Chaque bouton a ainsi un seul rôle, facile à retenir.
 
@@ -70,12 +71,12 @@ Démarrage avec le bouton rouge appuyé ──► 🟡 CONFIGURATION
 | 🟡 jaune fixe | mode configuration | ✅ |
 | 🔵 bleu fixe | mode économique | ✅ |
 | 🟠 orange fixe | mode maintenance | ✅ |
-| 🔴🔵 rouge / bleu | l'horloge (RTC) ne répond pas | 🧪 débrancher la RTC pour tester |
+| 🔴🔵 rouge / bleu | l'horloge (RTC) ne répond pas | ✅ testé le 20/10 : RTC débranchée → alerte, mesure rangée dans `000000_0.LOG` |
 | 🔴🟡 rouge / jaune | le GPS ne répond pas | ✅ |
-| 🔴🟢 rouge / vert | un capteur ne répond pas | ✅ luminosité · 🧪 débrancher le BME280 pour tester |
+| 🔴🟢 rouge / vert | un capteur ne répond pas | ✅ testé le 20/10 : BME280 et luminosité débranchés → « indisponible », erreur après 2 mesures, retour à la normale une fois rebranchés |
 | 🔴🟢 rouge / vert *(vert 2× plus long)* | une valeur mesurée est anormale | ✅ |
 | 🔴⚪ rouge / blanc | la carte SD est pleine | 🧪 codé, difficile à tester (il faudrait remplir la carte) |
-| 🔴⚪ rouge / blanc *(blanc 2× plus long)* | erreur de la carte SD | 🧪 retirer la carte en mode standard pour tester |
+| 🔴⚪ rouge / blanc *(blanc 2× plus long)* | erreur de la carte SD | ✅ testé le 20/10 : carte retirée en standard → erreur, puis remontée automatique quand elle est remise |
 
 ---
 
@@ -106,7 +107,7 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 |---|---|---|
 | `NOM=valeur` | change un réglage | `LOG_INTERVAL=5` |
 | `RESET` | remet tous les réglages d'usine | |
-| `VERSION` | affiche la version et le numéro de lot | |
+| `VERSION` | affiche la version, le numéro de lot, le numéro de build et le mode (release / debug) | |
 | `CLOCK=` | règle l'heure | `CLOCK=14:30:00` |
 | `DATE=` | règle la date (mois, jour, année) | `DATE=10,12,2026` |
 | `DAY=` | règle le jour de la semaine | `DAY=MON` |
@@ -158,9 +159,28 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 ## 💾 8. Carte SD — ✅ fait
 
 - ✅ Faire répondre la carte : initialisation réussie sur la Nucleo actuelle
-- ✅ Écrire les fichiers de mesures (environ 0,3 s par mesure)
+- ✅ Écrire les fichiers de mesures (environ 0,3 à 0,4 s par écriture, une mesure complète environ 0,5 s : mesuré le 20/10)
 - ✅ Changer de fichier quand il est plein (testé avec FILE_MAX_SIZE = 512)
-- 🧪 Détecter la carte pleine et les erreurs (LED rouge / blanc) : codé, à tester en retirant la carte en mode standard
+- ✅ Erreur d'accès (carte retirée en standard) testée le 20/10, avec remontée automatique · 🧪 carte pleine : codée, non testée (il faudrait remplir la carte)
+
+---
+
+## 🎓 Attendus des prosits
+
+> Consigne du cours : *toute demande de fonctionnalité dans un prosit correspond à une demande attendue à la fin du projet.*
+
+| Prosit | Fonctionnalité attendue | État |
+|---|---|---|
+| 3 · Auto-compilation | script bash compilation → téléversement | ✅ `televerser.sh` |
+| 3 · Auto-compilation | numéro de build, mode debug / release | ✅ numéro incrémenté à chaque compilation, choix du mode, affichés par `VERSION` |
+| 4 · Structures | structures au lieu de tableaux, passage par adresse | ✅ `Measurement`, `Config`, `SystemHealth`… |
+| 4 · Structures | types adaptés aux valeurs, erreurs sur des bits | ✅ entiers en dixièmes, indicateurs sur 1 bit : `Measurement` 64 → 28 octets |
+| 4 · Structures | moyenne glissante de l'algorithme `Algo_Mesure` | non retenue : le prosit demandait de corriger la façon de coder l'algorithme (structures, complexité, types, copies), pas d'ajouter une moyenne ; le PDF demande d'enregistrer les mesures |
+| 5 · Pile | marge de pile, pile ou tas | ✅ pile mesurée (1 728 → 1 008 o, remesurée le 20/10), tampons SD sortis de la pile en `static` (pas de `malloc`, donc pas de fragmentation), linker script ajusté |
+| 6 · Interruptions | GPS sur une liaison série séparée de la console | ✅ UART4 / USART2, réception par interruption |
+| 6 · Interruptions | appui long détecté pendant l'acquisition, par interruption | ✅ EXTI sur PA8 / PA9, testé sur la maquette le 20/10 |
+| 7 · Système de fichiers | FAT32, unité d'allocation adaptée | ✅ carte FAT32, blocs de 4 Ko |
+| 7 · Système de fichiers | organisation des fichiers et analyse de complexité | ⏳ analyse à rédiger à la fin du projet |
 
 ---
 
@@ -183,6 +203,8 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 6. **Carte SD** : la retirer, la mettre dans le PC et ouvrir le fichier du jour (ex : `261014_0.LOG`) → une ligne par mesure.
 7. **Retrait en maintenance** : rouge 5 s (orange), retirer puis remettre la carte, rouge 5 s → les mesures suivantes sont de nouveau enregistrées.
 8. **Carte retirée en standard** : retirer la carte → à la mesure suivante, LED rouge / blanc (blanc 2× plus long).
+9. **Boutons par interruption** : appuyer 5 s sur le vert pendant qu'une mesure est en cours → le mode change ; relâcher avant 5 s → « relache trop tôt » avec la durée exacte, un seul message par appui (pas de rebonds).
+10. **Numéro de build** : lancer `./televerser.sh debug`, puis `VERSION` en mode configuration → « build N (debug) » ; relancer en release → « build N+1 (release) ».
 
 > 💡 **Tester les pannes rapidement :** un capteur débranché est attendu **TIMEOUT** secondes (30 s par défaut) à chaque mesure, et l'erreur s'affiche après **2 mesures**, soit environ 1 min en maintenance. Pour une démonstration plus rapide, taper `TIMEOUT=5` en mode configuration : l'erreur s'affiche alors en environ 15 s. Remettre `TIMEOUT=30` (ou `RESET`) après.
 
@@ -199,13 +221,13 @@ Les commandes se tapent dans le **moniteur série**, puis Entrée.
 - **Fichiers CSV** : le PDF demande « une seule ligne horodatée » sans imposer de format. Les colonnes sont séparées par `;`, ce qui permet d'ouvrir le fichier dans Excel.
 - **Archivage d'un fichier plein** : le PDF demande une copie puis une reprise au début de `_0`. Renommer `_0` en `_N` puis créer un `_0` neuf donne le même résultat, plus vite.
 - **`000000_0.LOG` si l'heure est indisponible** : si la RTC ne répond pas, la date est inconnue. `000000` garde le format du PDF tout en montrant qu'il n'y a pas de date, et la mesure n'est pas perdue.
-- **Mémoire (prosit « Il faut changer la pile ! »)** : la pile mesurée dépassait la réservation du linker script (1 728 o pour 1 Ko). Les tampons de la carte SD ont été déplacés dans le tas (un seul `malloc` au démarrage, test de `NULL`), le tas est protégé contre la collision avec la pile, et le linker script a été ajusté d'après les mesures (2 Ko de pile, 2 Ko de tas). Détails dans la section 8 du README.
+- **Mémoire (prosit « Il faut changer la pile ! »)** : la pile mesurée dépassait la réservation du linker script (1 728 o pour 1 Ko). Les tampons de la carte SD ont été sortis de la pile et déclarés `static` : le prosit propose `malloc`, mais signale le risque de fragmentation du tas ; la mémoire statique évite le problème sans allocation dynamique. Le tas (utilisé seulement par la bibliothèque C) reste protégé contre la collision avec la pile, et le linker script a été ajusté d'après les mesures (2 Ko de pile, 2 Ko de tas). Détails dans la section 8 du README.
 - **Nombre de fichiers LOG** : 2 Ko par défaut comme le PDF, soit environ 1 500 fichiers et 6 Mo par an (1 500 × 4 Ko) (la carte de 8 Go ne sera jamais pleine). La carte range les fichiers par blocs de 4 Ko, donc un fichier de 2 Ko gaspille la moitié de son bloc : nous conseillons `FILE_MAX_SIZE=4096`, qui divise le nombre de fichiers par 2 sans espace perdu.
 
 ### Petits ajouts non demandés par le PDF (sans effet sur le fonctionnement demandé)
 
 - **Première mesure dès le démarrage** : le PDF dit « à intervalle régulier » sans préciser quand commence la première mesure ; la faire tout de suite montre que la station fonctionne.
 - **Messages `/!\`** sous les mesures : la LED n'affiche que la panne la plus prioritaire ; en maintenance, ces messages montrent toutes les pannes en cours.
-- **Ligne `[MEM] Tas` au démarrage** : c'est l'« analyse du tas » demandée par le prosit 5.
+- **Ligne `[MEM] Tas` au démarrage** : montre l'occupation du tas par la bibliothèque C et la place restante avant la pile (prosit 5).
 - **Valeur hors seuils gardée dans le fichier** : le PDF demande que le capteur « se mette en erreur » (LED) mais ne dit rien sur la valeur enregistrée ; on la garde pour ne pas perdre d'information.
 - **Code LED pour une valeur hors seuils** : le PDF dit « en erreur » sans préciser lequel de ses deux codes rouge / vert ; nous utilisons « données incohérentes » (vert 2× plus long), qui correspond à une valeur anormale.

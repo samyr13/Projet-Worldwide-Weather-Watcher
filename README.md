@@ -32,11 +32,11 @@ Carte **STM32 Nucleo-L476RG** (microcontrôleur ARM Cortex-M4) avec un shield Gr
 | Module | Port du shield | Broches STM32 | Liaison |
 |---|---|---|---|
 | Capteur **BME280** (température, humidité, pression) | I2C | PB8 (SCL), PB9 (SDA) | I2C, adresse 0x76 |
-| Horloge **RTC DS1307** | I2C | PB8 (SCL), PB9 (SDA) | I2C, adresse 0x68 |
-| **GPS** Air530Z | A0 | PA0 (réception), PA1 (émission) | UART4, 9600 bauds |
-| Capteur de **luminosité** | A2 | PA4 | entrée analogique (ADC) |
-| **LED** RGB P9813 | D2 | PB3 (données), PA10 (horloge) | 2 fils |
-| **Boutons** rouge et vert | D7 | PA8 (rouge), PA9 (vert) | entrées numériques |
+| **Grove RTC v1.2** (horloge, puce DS1307) | I2C | PB8 (SCL), PB9 (SDA) | I2C, adresse 0x68 |
+| **GPS Grove Air530Z** | A0 | PA0 (réception), PA1 (émission) | UART4, 9600 bauds |
+| **Grove Light Sensor v1.2** (luminosité) | A2 | PA4 | entrée analogique (ADC) |
+| **Grove Chainable RGB LED v2.0** (puce P9813) | D2 | PB3 (données), PA10 (horloge) | 2 fils |
+| **Grove Dual Button v1.0** (rouge et vert) | D7 | PA9 (rouge), PA8 (vert) | entrées numériques avec interruption |
 | Lecteur de **carte SD** | SPI | PA5 (SCK), PA6 (MISO), PA7 (MOSI), CS sur PB5 | SPI, carte FAT32 ou exFAT |
 | **Moniteur série** (PC) | câble USB | PA2, PA3 | USART2, 115200 bauds |
 
@@ -50,10 +50,22 @@ Toutes les broches sont définies à un seul endroit : [include/board_pins.h](in
 
 Il faut **VS Code** et l'extension **PlatformIO**.
 
+Le plus simple : double-cliquer sur **[televerser.sh](televerser.sh)** (Git Bash), ou lancer `./televerser.sh release` / `./televerser.sh debug`. Le script vérifie que la carte est branchée, incrémente le **numéro de build**, compile dans le mode choisi, téléverse puis ouvre le moniteur série.
+
+| Mode | Environnement PlatformIO | Usage |
+|---|---|---|
+| **release** (par défaut) | `nucleo_l476rg` | code optimisé, pour la mise en service |
+| **debug** | `nucleo_l476rg_debug` | informations de débogage, pour le debugger de VS Code |
+
+Le numéro de build et le mode sont affichés par la commande `VERSION` du mode configuration.
+
+À la main :
+
 ```bash
-pio run                  # compiler
+pio run                  # compiler (release)
 pio run -t upload        # téléverser sur la carte
 pio device monitor       # ouvrir le moniteur série (115200 bauds)
+pio run -e nucleo_l476rg_debug   # compiler en mode debug
 ```
 
 Au démarrage, le moniteur série affiche :
@@ -65,7 +77,7 @@ Au démarrage, le moniteur série affiche :
 [GPS] Ecoute sur UART4 (port A0, 9600 bauds)
 [CAPTEUR] BME280 detecte en 0x76, calibration chargee
 [SD] Carte montee : FAT32, 7544 Mo
-[MEM] Tas : 1204 octets utilises, 92268 octets disponibles avant la pile
+[MEM] Tas : 436 octets utilises, 92308 octets disponibles avant la pile
 
 ----- Mesure du 14/10/2026 a 11:09:34 -----
   Temperature : 24.1 C
@@ -107,7 +119,7 @@ Démarrage avec le bouton rouge ──► 🟡 CONFIGURATION ──(30 min sans 
 |---|---|---|
 | `NOM=valeur` | change un réglage (valeur contrôlée, puis enregistrée) | `LOG_INTERVAL=5` |
 | `RESET` | remet tous les réglages par défaut | |
-| `VERSION` | affiche la version et le numéro de lot | |
+| `VERSION` | affiche la version, le numéro de lot, le numéro de build et le mode (release ou debug) | |
 | `CLOCK=HH:MM:SS` | règle l'heure | `CLOCK=14:30:00` |
 | `DATE=MM,JJ,AAAA` | règle la date | `DATE=10,13,2026` |
 | `DAY=MON..SUN` | règle le jour de la semaine | `DAY=TUE` |
@@ -172,11 +184,12 @@ Le code est découpé en **3 couches**. Chaque couche n'utilise que celle du des
 │   ├── board_pins.h      branchements de tous les modules
 │   ├── cesi_types.h      types partagés (date, mesures, GPS)
 │   ├── modes.h           les 4 modes
-│   └── version.h         version et numéro de lot
+│   └── version.h         version, numéro de lot, numéro de build, mode
 ├── src/                  modules de l'application (.c)
 ├── lib/cesi_grove/       drivers des composants Grove
 ├── lib/fatfs/            système de fichiers FatFs R0.12c + diskio.c
-├── platformio.ini        configuration de compilation
+├── platformio.ini        configuration de compilation (modes release et debug)
+├── televerser.sh         compilation, numéro de build, téléversement, moniteur série
 ├── STM32L476RGTX_FLASH.ld  linker script (tailles de la pile et du tas)
 ├── CHECKLIST.md          avancement par rapport au cahier des charges
 └── README.md             ce document
@@ -202,7 +215,7 @@ Le programme ne s'arrête **jamais** pour attendre un capteur : chaque tour de b
 
 ```
 while (1) {
-   A. process_button_presses()   lit les boutons, change de mode après 5 s
+   A. process_button_presses()   traite les appuis signalés par interruption, change de mode après 5 s
       Console_Process()          exécute les commandes tapées au clavier
       GroveGPS_Process()         décode les trames GPS reçues en arrière-plan
 
@@ -259,11 +272,15 @@ Acquisition_Poll(), à chaque tour de boucle :
 
 #### [src/buttons.c](src/buttons.c) — boutons et changements de mode
 
+Les appuis sont détectés **par interruption** (EXTI, lignes 8 et 9) : à chaque front montant ou descendant, la routine note seulement l'instant du changement. La boucle principale lit ensuite l'état stable du bouton une fois les rebonds du contact terminés (20 ms), et mesure la durée d'appui à partir de l'instant noté par l'interruption. Un appui est donc capté au moment exact où il se produit, même si le programme est occupé ailleurs.
+
 Chaque bouton a 3 états : *relâché*, *appui en cours* et *action faite*. L'état *action faite* évite de déclencher l'action plusieurs fois tant que le bouton reste appuyé.
 
 | Fonction | Rôle |
 |---|---|
-| `buttons_init()` | configure PA8 et PA9 en entrées avec résistance de tirage vers le haut |
+| `buttons_init()` | configure PA8 et PA9 en entrées avec résistance de tirage vers le haut et interruption sur les deux fronts |
+| `EXTI9_5_IRQHandler()` / `HAL_GPIO_EXTI_Callback()` | interruption des boutons : note l'instant du front (`record_edge()`) |
+| `read_stable()` | état stable d'un bouton après les rebonds, avec l'instant réel de l'appui ou du relâchement |
 | `check_boot_mode()` | au démarrage : mode configuration si le rouge est appuyé |
 | `process_button_presses()` | détecte les appuis de 5 s et change de mode ; gère le retour automatique après 30 min en configuration |
 | `buttons_config_activity()` | relance le délai de 30 min (appelée à chaque commande reçue) |
@@ -282,7 +299,6 @@ Chaque bouton a 3 états : *relâché*, *appui en cours* et *action faite*. L'é
 | `read_env()` / `read_light()` / `read_gps()` | lecture de chaque capteur (fonctions internes) |
 | `update_timeouts()` | compte les mesures consécutives sans réponse d'un capteur |
 | `data_coherent()` | vérifie la température et la pression par rapport aux seuils |
-
 #### [src/datalog.c](src/datalog.c) — enregistrement sur la carte SD
 
 Chaque mesure est ajoutée sur une ligne au format CSV (séparateur `;`), dans le fichier `AAMMJJ_0.LOG` du jour (`000000_0.LOG` si l'heure est indisponible : horloge en panne ou désactivée). Une ligne d'en-tête est écrite au début de chaque fichier :
@@ -378,8 +394,8 @@ Tous les réglages sont décrits dans un tableau `params[]` : nom, emplacement e
 | [include/cesi_types.h](include/cesi_types.h) | `RTC_DateTime` (date et heure), `Env_Data` (température, humidité, pression), `GPS_Data` (position) |
 | [include/modes.h](include/modes.h) | les 4 modes et la variable globale `mode_actuel` |
 | [include/config.h](include/config.h) | la structure `Config` qui contient tous les réglages |
-| [include/acquisition.h](include/acquisition.h) | la structure `Measurement` (une mesure complète) |
-| [include/version.h](include/version.h) | version du programme et numéro de lot |
+| [include/acquisition.h](include/acquisition.h) | la structure `Measurement` (une mesure complète, valeurs en entiers et indicateurs sur 1 bit) |
+| [include/version.h](include/version.h) | version du programme, numéro de lot, numéro de build et mode |
 
 ---
 
@@ -389,9 +405,9 @@ Le STM32L476RG a **96 Ko de RAM**. Elle est partagée entre trois zones :
 
 ```
 0x20000000 ┌──────────────────────────────┐
-           │ variables globales/statiques │  .data + .bss : 2,7 Ko
+           │ variables globales/statiques │  .data + .bss : 3,4 Ko (dont les tampons de la carte SD)
            ├──────────────────────────────┤  <- end
-           │ TAS (malloc), grandit ↓      │  1,2 Ko utilisés
+           │ TAS, grandit ↓               │  utilisé seulement par la bibliothèque C
            │                              │
            │        RAM libre             │  ~ 90 Ko
            │                              │
@@ -403,22 +419,35 @@ Le STM32L476RG a **96 Ko de RAM**. Elle est partagée entre trois zones :
 
 | Mesure | Avant optimisation | Après |
 |---|---|---|
-| Variables globales et statiques (`.data` + `.bss`) | 2,7 Ko | 2,7 Ko |
-| Pile utilisée au maximum (remplissage de la RAM avec un motif, puis lecture au débogueur) | **1 728 o** | **1 088 o** |
-| Tas utilisé (affiché au démarrage : `[MEM] Tas : ...`) | 0 o | 1 204 o |
+| Variables globales et statiques (`.data` + `.bss`) | 2,7 Ko | 3,4 Ko (les tampons de la carte SD y sont maintenant) |
+| Pile utilisée au maximum (remplissage de la RAM avec un motif, puis lecture au débogueur) | **1 728 o** | **1 008 o** |
+| Tas utilisé (par la bibliothèque C seulement) | — | 436 o |
 | Pile réservée par le linker script | 1 Ko (dépassée) | 2 Ko |
 | Tas réservé par le linker script | 512 o | 2 Ko |
 
+Mesure de la pile « après » refaite le 20/10 sur la version finale : démarrage, une mesure complète, écriture sur la carte SD et environ 1 min 30 de fonctionnement.
+
 ### Ce qui a été fait
 
-1. **Les gros tampons ont quitté la pile.** Le fichier ouvert sur la carte SD (`FIL`, environ 600 octets) et la ligne CSV (160 octets) étaient déclarés dans `DataLog_Write()`, donc sur la pile. Ils sont maintenant alloués dans le **tas**.
-2. **Un seul `malloc`, au démarrage** (`DataLog_Init()`), jamais dans la boucle principale. Des `malloc` / `free` répétés **fragmenteraient le tas**.
-3. **Test de `NULL` après chaque `malloc`.** En cas d'échec, l'enregistrement SD est désactivé proprement avec un message, au lieu d'écrire à une adresse invalide.
-4. **Pas de `free`** pour ces tampons : ils servent pendant toute la vie du programme, qui ne se termine jamais.
-5. **Tas protégé contre la collision avec la pile** ([src/heap.c](src/heap.c)). La fonction `_sbrk()`, appelée par `malloc()`, refuse de faire grandir le tas dans la zone réservée à la pile : `malloc()` renvoie alors `NULL` au lieu d'écraser la pile.
-6. **Linker script ajusté d'après les mesures** ([STM32L476RGTX_FLASH.ld](STM32L476RGTX_FLASH.ld)) : 2 Ko pour la pile et 2 Ko pour le tas. Si le programme dépassait un jour la RAM disponible, l'éditeur de liens refuserait de le compiler.
+1. **Les gros tampons ont quitté la pile.** Le fichier ouvert sur la carte SD (`FIL`, environ 600 octets) et la ligne CSV (160 octets) étaient déclarés dans `DataLog_Write()`, donc sur la pile, et la faisaient déborder. Ils sont maintenant déclarés `static` dans [datalog.c](src/datalog.c) : réservés une fois pour toutes à la compilation, sans `malloc` ni `free`, donc sans risque d'échec d'allocation ni de fragmentation du tas.
+2. **Tas protégé contre la collision avec la pile** ([src/heap.c](src/heap.c)). Notre code n'appelle pas `malloc`, mais la bibliothèque C peut l'utiliser (affichage `printf`). La fonction `_sbrk()`, appelée par `malloc()`, refuse de faire grandir le tas dans la zone réservée à la pile : `malloc()` renvoie alors `NULL` au lieu d'écraser la pile. L'occupation du tas est affichée au démarrage (`[MEM] Tas : ...`).
+3. **Linker script ajusté d'après les mesures** ([STM32L476RGTX_FLASH.ld](STM32L476RGTX_FLASH.ld)) : 2 Ko pour la pile et 2 Ko pour le tas. Si le programme dépassait un jour la RAM disponible, l'éditeur de liens refuserait de le compiler.
 
 Les petites variables (indices, valeurs lues, structures de quelques octets) restent sur la pile. Les gros tableaux sont passés **par adresse** (pointeur) aux fonctions, et les petites valeurs **par valeur**.
+
+### Types adaptés aux données
+
+Les mesures ne sont affichées et enregistrées qu'avec **1 décimale** : les stocker en `float` (4 octets, jusqu'à ±3,4·10³⁸) ou en `double` (8 octets) était surdimensionné. Elles sont converties une seule fois, à la lecture du capteur, en **entiers** de la taille juste nécessaire, et les indicateurs (valeur valide, capteur en erreur…) tiennent sur **1 bit** chacun :
+
+| Donnée | Avant | Après |
+|---|---|---|
+| Température, humidité, pression | `float` (4 octets) | entier en dixièmes, 2 octets (214 = 21,4 °C) |
+| Latitude, longitude | `double` (8 octets) | entier en millionièmes de degré, 4 octets (précision ~10 cm) |
+| Indicateurs `*_valid`, `*_ok` | 1 octet chacun | 1 bit chacun |
+| Structure `Measurement` | 64 octets | **28 octets** |
+| `AcquisitionHealth` / `SystemHealth` | 4 / 6 octets | **1 / 1 octet** |
+
+Mesuré avec le compilateur ARM (`sizeof`). Le programme est aussi plus petit (64,4 Ko de flash au lieu de 65,7 Ko) : moins de calculs en virgule flottante.
 
 ---
 
@@ -428,6 +457,8 @@ Les petites variables (indices, valeurs lues, structures de quelques octets) res
 |---|---|
 | **Programme non bloquant** | une mesure avance petit à petit à chaque tour de boucle ; les boutons et la console répondent toujours |
 | **Réception GPS et clavier par interruption** | aucun caractère n'est perdu, même pendant une mesure |
+| **Boutons par interruption (EXTI)** | l'instant de l'appui est noté dès qu'il se produit, quel que soit le travail en cours ; la durée de 5 s est mesurée à partir de cet instant |
+| **Mesures stockées en entiers, indicateurs sur 1 bit** | la précision utile est d'une décimale : `Measurement` passe de 64 à 28 octets || **Numéro de build et modes release / debug** | `televerser.sh` numérote chaque compilation et laisse choisir le mode ; `VERSION` les affiche pour savoir quel programme tourne sur la carte |
 | **Détection du capteur de lumière débranché** | l'entrée est chargée vers 0 V puis vers 3,3 V : si les deux lectures diffèrent, rien n'est branché |
 | **Réglages en mémoire flash** | la carte n'a pas d'EEPROM ; un code de reconnaissance et une somme de contrôle protègent les données |
 | **Vert pour sortir de l'économique** | le PDF donne deux rôles au bouton rouge en économique ; chaque bouton garde ainsi un seul rôle |

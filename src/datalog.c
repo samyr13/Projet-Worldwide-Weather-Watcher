@@ -3,7 +3,6 @@
 #include "ff.h"
 #include "diskio.h"
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #define LINE_SIZE        160 // Une ligne CSV et son retour à la ligne
@@ -14,13 +13,12 @@ static bool sd_ok = true;
 static bool sd_space_ok = true;
 
 /*
- * Tampons de l'écriture, alloués UNE seule fois dans le tas au démarrage
- * (prosit « Il faut changer la pile ! ») : ils ne sont plus sur la pile
- * (FIL fait environ 600 octets) et ne sont jamais libérés, car ils servent
- * pendant toute la vie du programme ; malloc / free répétés fragmenteraient le tas.
+ * Tampons de l'écriture, réservés une fois pour toutes en mémoire statique
+ * (prosit « Il faut changer la pile ! ») : déclarés dans DataLog_Write(), ils
+ * faisaient déborder la pile (FIL fait environ 600 octets).
  */
-static FIL *fil = NULL;
-static char *line = NULL;
+static FIL fil;
+static char line[LINE_SIZE];
 
 static const char *fs_type_name(BYTE type)
 {
@@ -63,19 +61,6 @@ static void access_error(const char *action, FRESULT fr)
 
 void DataLog_Init(void)
 {
-    // Allocation unique des tampons dans le tas, avec test de NULL obligatoire
-    fil = malloc(sizeof(FIL));
-    line = malloc(LINE_SIZE);
-    if (fil == NULL || line == NULL) {
-        printf("[SD] ERREUR : memoire insuffisante dans le tas, enregistrement desactive\r\n");
-        free(fil);
-        free(line);
-        fil = NULL;
-        line = NULL;
-        sd_ok = false;
-        return;
-    }
-
     sd_ok = mount();
     if (!sd_ok)
         return;
@@ -135,7 +120,7 @@ static bool write_text(FIL *file, const char *text)
 
 void DataLog_Write(const Measurement *m)
 {
-    if (fil == NULL || line == NULL || !mount()) { // Tampons non alloués ou carte absente
+    if (!mount()) { // Carte absente ou illisible
         sd_ok = false;
         return;
     }
@@ -163,7 +148,7 @@ void DataLog_Write(const Measurement *m)
         size = 0;
     }
 
-    fr = f_open(fil, name0, FA_OPEN_APPEND | FA_WRITE);
+    fr = f_open(&fil, name0, FA_OPEN_APPEND | FA_WRITE);
     if (fr == FR_DENIED) {
         printf("[SD] ERREUR : carte pleine\r\n");
         sd_space_ok = false;
@@ -176,11 +161,11 @@ void DataLog_Write(const Measurement *m)
 
     bool ok = true;
     if (size == 0) {
-        ok = write_text(fil, Acquisition_HeaderLine()) && write_text(fil, "\r\n");
+        ok = write_text(&fil, Acquisition_HeaderLine()) && write_text(&fil, "\r\n");
     }
-    ok = ok && write_text(fil, line);
+    ok = ok && write_text(&fil, line);
 
-    fr = f_close(fil);
+    fr = f_close(&fil);
     if (fr != FR_OK) {
         access_error("fermeture du fichier", fr);
         return;

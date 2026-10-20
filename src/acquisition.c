@@ -24,11 +24,17 @@ static Measurement current;
 static uint8_t env_timeouts = 0;
 static uint8_t light_timeouts = 0;
 static uint8_t gps_timeouts = 0;
-static AcquisitionHealth health = { true, true, true, true };
+static AcquisitionHealth health = { 1, 1, 1, 1 };
 
 static bool env_enabled(void)
 {
     return g_config.temp_air || g_config.hygr || g_config.pressure;
+}
+
+// Valeur réelle -> entier arrondi à l'échelle demandée (x10 : dixièmes, x1000000 : millionièmes)
+static int32_t to_scaled(double value, double scale)
+{
+    return (int32_t)(value * scale + (value >= 0.0 ? 0.5 : -0.5));
 }
 
 // Capteur BME280 : température, humidité, pression
@@ -39,17 +45,17 @@ static bool read_env(void)
     if (!GroveBME680_ReadEnvironment(&d))
         return false;
 
-    current.temp_valid = g_config.temp_air;
-    current.temperature_c = d.temperature_c;
+    current.temp_valid = g_config.temp_air != 0;
+    current.temperature_x10 = (int16_t)to_scaled(d.temperature_c, 10.0);
 
     // Hygrométrie ignorée hors de la plage de température HYGR_MINT..HYGR_MAXT
     current.hum_valid = g_config.hygr &&
-                        d.temperature_c >= g_config.hygr_mint &&
-                        d.temperature_c <= g_config.hygr_maxt;
-    current.humidity_percent = d.humidity_percent;
+                        current.temperature_x10 >= g_config.hygr_mint * 10 &&
+                        current.temperature_x10 <= g_config.hygr_maxt * 10;
+    current.humidity_x10 = (uint16_t)to_scaled(d.humidity_percent, 10.0);
 
-    current.pres_valid = g_config.pressure;
-    current.pressure_hpa = d.pressure_hpa;
+    current.pres_valid = g_config.pressure != 0;
+    current.pressure_x10 = (uint16_t)to_scaled(d.pressure_hpa, 10.0);
 
     return true;
 }
@@ -89,8 +95,8 @@ static bool read_gps(void)
 
     current.gps_responded = true;
     current.gps_valid = gps.valid;
-    current.latitude = gps.latitude;
-    current.longitude = gps.longitude;
+    current.latitude_e6 = to_scaled(gps.latitude, 1000000.0);
+    current.longitude_e6 = to_scaled(gps.longitude, 1000000.0);
     current.satellites = gps.satellites;
     return true;
 }
@@ -107,11 +113,11 @@ static void update_timeouts(uint8_t *count, bool enabled, bool done)
 static bool data_coherent(const Measurement *m)
 {
     if (m->temp_valid &&
-        (m->temperature_c < g_config.min_temp_air || m->temperature_c > g_config.max_temp_air))
+        (m->temperature_x10 < g_config.min_temp_air * 10 || m->temperature_x10 > g_config.max_temp_air * 10))
         return false;
 
     if (m->pres_valid &&
-        (m->pressure_hpa < g_config.pressure_min || m->pressure_hpa > g_config.pressure_max))
+        (m->pressure_x10 < g_config.pressure_min * 10 || m->pressure_x10 > g_config.pressure_max * 10))
         return false;
 
     return true;
@@ -182,24 +188,22 @@ AcquisitionHealth Acquisition_GetHealth(void)
     return health;
 }
 
-// printf sans support float : valeur avec 1 décimale, ou "NA"
-static void format_1dec(char *buf, size_t len, bool valid, float value)
+// Valeur en dixièmes affichée avec 1 décimale (214 -> "21.4"), ou "NA"
+static void format_1dec(char *buf, size_t len, bool valid, int32_t x10)
 {
     if (!valid) {
         snprintf(buf, len, "NA");
         return;
     }
 
-    int x10 = (int)(value * 10.0f + (value >= 0.0f ? 0.5f : -0.5f));
     const char *sign = (x10 < 0) ? "-" : "";
     if (x10 < 0) x10 = -x10;
-    snprintf(buf, len, "%s%d.%d", sign, x10 / 10, x10 % 10);
+    snprintf(buf, len, "%s%ld.%ld", sign, (long)(x10 / 10), (long)(x10 % 10));
 }
 
-// Coordonnée en degrés décimaux avec 6 décimales (précision ~10 cm)
-static void format_coord(char *buf, size_t len, double value)
+// Coordonnée en millionièmes de degré affichée avec 6 décimales (précision ~10 cm)
+static void format_coord(char *buf, size_t len, int32_t micro)
 {
-    long micro = (long)(value * 1000000.0 + (value >= 0.0 ? 0.5 : -0.5));
     const char *sign = (micro < 0) ? "-" : "";
     if (micro < 0) micro = -micro;
     snprintf(buf, len, "%s%ld.%06ld", sign, micro / 1000000L, micro % 1000000L);
@@ -216,7 +220,7 @@ static const char *light_level_name(LightLevel level)
 }
 
 // Une ligne "  Libelle : valeur unite" du bloc affiché sur le moniteur série
-static void print_field(const char *label, bool valid, float value, const char *unit)
+static void print_field(const char *label, bool valid, int32_t value, const char *unit)
 {
     char buf[16];
 
@@ -238,9 +242,9 @@ void Acquisition_Print(const Measurement *m)
         printf("----- Mesure (heure indisponible) -----\r\n");
     }
 
-    print_field("Temperature", m->temp_valid, m->temperature_c, "C");
-    print_field("Humidite", m->hum_valid, m->humidity_percent, "%");
-    print_field("Pression", m->pres_valid, m->pressure_hpa, "hPa");
+    print_field("Temperature", m->temp_valid, m->temperature_x10, "C");
+    print_field("Humidite", m->hum_valid, m->humidity_x10, "%");
+    print_field("Pression", m->pres_valid, m->pressure_x10, "hPa");
 
     if (m->light_valid) {
         static const char *const level_text[] = { "?", "faible", "moyenne", "forte" };
@@ -253,10 +257,10 @@ void Acquisition_Print(const Measurement *m)
         printf("  %-12s: non mesuree (mode economique : 1 mesure sur 2)\r\n", "Position");
     } else if (m->gps_valid) {
         char lat[16], lon[16];
-        format_coord(lat, sizeof(lat), m->latitude < 0 ? -m->latitude : m->latitude);
-        format_coord(lon, sizeof(lon), m->longitude < 0 ? -m->longitude : m->longitude);
+        format_coord(lat, sizeof(lat), m->latitude_e6 < 0 ? -m->latitude_e6 : m->latitude_e6);
+        format_coord(lon, sizeof(lon), m->longitude_e6 < 0 ? -m->longitude_e6 : m->longitude_e6);
         printf("  %-12s: %s %c, %s %c (%u satellites)\r\n", "Position",
-               lat, m->latitude < 0 ? 'S' : 'N', lon, m->longitude < 0 ? 'W' : 'E', m->satellites);
+               lat, m->latitude_e6 < 0 ? 'S' : 'N', lon, m->longitude_e6 < 0 ? 'W' : 'E', m->satellites);
     } else if (m->gps_responded) {
         printf("  %-12s: recherche des satellites... (%u en vue)\r\n", "Position", m->satellites);
     } else {
@@ -283,9 +287,9 @@ void Acquisition_FormatLine(const Measurement *m, char *buf, size_t len)
         snprintf(time_str, sizeof(time_str), "NA");
     }
 
-    format_1dec(temp, sizeof(temp), m->temp_valid, m->temperature_c);
-    format_1dec(hum, sizeof(hum), m->hum_valid, m->humidity_percent);
-    format_1dec(pres, sizeof(pres), m->pres_valid, m->pressure_hpa);
+    format_1dec(temp, sizeof(temp), m->temp_valid, m->temperature_x10);
+    format_1dec(hum, sizeof(hum), m->hum_valid, m->humidity_x10);
+    format_1dec(pres, sizeof(pres), m->pres_valid, m->pressure_x10);
 
     if (m->light_valid)
         snprintf(light, sizeof(light), "%u", m->light);
@@ -293,13 +297,13 @@ void Acquisition_FormatLine(const Measurement *m, char *buf, size_t len)
         snprintf(light, sizeof(light), "NA");
 
     if (m->gps_valid) {
-        format_coord(lat, sizeof(lat), m->latitude);
-        format_coord(lon, sizeof(lon), m->longitude);
+        format_coord(lat, sizeof(lat), m->latitude_e6);
+        format_coord(lon, sizeof(lon), m->longitude_e6);
     } else {
         snprintf(lat, sizeof(lat), "NA");
         snprintf(lon, sizeof(lon), "NA");
     }
 
     snprintf(buf, len, "%s;%s;%s;%s;%s;%s;%s;%s", time_str, temp, hum, pres, light,
-             m->light_valid ? light_level_name(m->light_level) : "NA", lat, lon);
+             m->light_valid ? light_level_name((LightLevel)m->light_level) : "NA", lat, lon);
 }

@@ -4,7 +4,7 @@
 #include "stm32l4xx_hal.h"
 
 /*
- * Grove Chainable RGB LED :
+ * Grove Chainable RGB LED v2.0 (puce P9813) :
  * - Port Grove D2 du shield
  * - PA10 → CIN (horloge P9813)
  * - PB3  → DIN (données P9813)
@@ -16,7 +16,7 @@
 #define RGB_CLK_PIN     GPIO_PIN_10
 
 /*
- * Grove Light Sensor v1.3
+ * Grove Light Sensor v1.2
  * Port Grove A2 du shield (PA4 = ADC1_IN9).
  */
 #ifndef LIGHT_ADC_CHANNEL
@@ -28,14 +28,15 @@
 /*
  * Grove Dual Button v1.0
  * Port Grove D7 du shield (actifs à l'état bas, pull-up interne) :
- * - PA8 (D7) : bouton rouge
- * - PA9 (D8) : bouton vert
+ * - PA9 (D8) : bouton rouge
+ * - PA8 (D7) : bouton vert
+ * (vérifié sur la maquette le 20/10 : appui sur le rouge -> PA9)
  */
 #define BTN_RED_PORT   GPIOA
-#define BTN_RED_PIN    GPIO_PIN_8
+#define BTN_RED_PIN    GPIO_PIN_9
 
 #define BTN_GREEN_PORT GPIOA
-#define BTN_GREEN_PIN  GPIO_PIN_9
+#define BTN_GREEN_PIN  GPIO_PIN_8
 
 /*
  * Grove GPS Air530Z

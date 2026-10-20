@@ -13,38 +13,39 @@ typedef enum {
     LIGHT_LEVEL_HIGH     // > LUMIN_HIGH
 } LightLevel;
 
-// Une ligne de mesures horodatée (champ *_valid = false -> "NA")
+/*
+ * Une ligne de mesures horodatée (indicateur *_valid à 0 -> "NA").
+ * Types ajustés à la précision réellement utilisée (1 décimale affichée) :
+ * entiers en dixièmes plutôt que float, indicateurs sur 1 bit.
+ */
 typedef struct {
-    bool time_valid;
     RTC_DateTime time;
 
-    bool temp_valid;
-    float temperature_c;
+    int16_t  temperature_x10;   // Dixièmes de °C (214 = 21,4 °C)
+    uint16_t humidity_x10;      // Dixièmes de % (482 = 48,2 %)
+    uint16_t pressure_x10;      // Dixièmes de hPa (10136 = 1013,6 hPa)
+    uint16_t light;             // 0-1023
+    int32_t  latitude_e6;       // Millionièmes de degré (négatif = Sud)
+    int32_t  longitude_e6;      // Millionièmes de degré (négatif = Ouest)
+    uint8_t  satellites;
+    uint8_t  light_level;       // LightLevel
 
-    bool hum_valid;
-    float humidity_percent;
-
-    bool pres_valid;
-    float pressure_hpa;
-
-    bool light_valid;
-    uint16_t light;          // 0-1023
-    LightLevel light_level;
-
-    bool gps_skipped;        // GPS non lu (mode économique : une mesure sur deux)
-    bool gps_responded;      // Trame GPS reçue pendant l'acquisition
-    bool gps_valid;          // Position disponible (fix GPS)
-    double latitude;         // Degrés décimaux (négatif = Sud)
-    double longitude;        // Degrés décimaux (négatif = Ouest)
-    uint8_t satellites;
+    uint16_t time_valid    : 1;
+    uint16_t temp_valid    : 1;
+    uint16_t hum_valid     : 1;
+    uint16_t pres_valid    : 1;
+    uint16_t light_valid   : 1;
+    uint16_t gps_skipped   : 1; // GPS non lu (mode économique : une mesure sur deux)
+    uint16_t gps_responded : 1; // Trame GPS reçue pendant l'acquisition
+    uint16_t gps_valid     : 1; // Position disponible (fix GPS)
 } Measurement;
 
-// Bilan de santé mis à jour à la fin de chaque acquisition
+// Bilan de santé mis à jour à la fin de chaque acquisition (1 bit par indicateur)
 typedef struct {
-    bool rtc_ok;     // Horloge RTC lue
-    bool gps_ok;     // GPS en erreur après 2 mesures consécutives sans trame
-    bool sensor_ok;  // Aucun capteur en erreur (2 mesures consécutives en timeout)
-    bool data_ok;    // Données dans les seuils (MIN/MAX_TEMP_AIR, PRESSURE_MIN/MAX)
+    uint8_t rtc_ok    : 1;  // Horloge RTC lue
+    uint8_t gps_ok    : 1;  // GPS en erreur après 2 mesures consécutives sans trame
+    uint8_t sensor_ok : 1;  // Aucun capteur en erreur (2 mesures consécutives en timeout)
+    uint8_t data_ok   : 1;  // Données dans les seuils (MIN/MAX_TEMP_AIR, PRESSURE_MIN/MAX)
 } AcquisitionHealth;
 
 // Lance une acquisition (non bloquant) ; with_gps = false : GPS non lu

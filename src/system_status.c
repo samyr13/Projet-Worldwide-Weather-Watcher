@@ -67,6 +67,6 @@ void SystemStatus_Update(SystemStatus *status, SystemMode mode, SystemHealth hea
         case MODE_STANDARD:      set_color(status, 0, 255, 0);   break; // Vert
         case MODE_CONFIGURATION: set_color(status, 255, 255, 0); break; // Jaune
         case MODE_ECONOMIQUE:    set_color(status, 0, 0, 255);   break; // Bleu
-        case MODE_MAINTENANCE:   set_color(status, 255, 165, 0); break; // Orange
+        case MODE_MAINTENANCE:   set_color(status, 255, 40, 0);  break; // Orange (vert réduit : sur la LED, 165 paraissait jaune)
     }
 }

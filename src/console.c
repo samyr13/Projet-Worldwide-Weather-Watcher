@@ -200,7 +200,8 @@ static void execute(char *cmd)
         printf("Parametres remis aux valeurs par defaut\r\n");
         save_config();
     } else if (strcmp(cmd, "VERSION") == 0) {
-        printf("Station meteo 3W - version %s - lot %s\r\n", FW_VERSION, BATCH_NUMBER);
+        printf("Station meteo 3W - version %s - lot %s - build %d (%s)\r\n",
+               FW_VERSION, BATCH_NUMBER, BUILD_NUMBER, BUILD_TYPE);
     } else if (strcmp(cmd, "CONFIG") == 0) {
         Config_Print();
     } else if (strcmp(cmd, "HELP") == 0) {
